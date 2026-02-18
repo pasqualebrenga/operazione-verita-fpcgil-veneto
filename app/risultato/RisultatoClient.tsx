@@ -493,7 +493,7 @@ export default function RisultatoClient() {
                   <b>€ {calc.arretrati.toFixed(2)}</b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span className="ov-muted">Già anticipato in busta</span>
+                  <span className="ov-muted">Già anticipato in busta come IVC</span>
                   <b>€ {calc.anticipato.toFixed(2)}</b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
