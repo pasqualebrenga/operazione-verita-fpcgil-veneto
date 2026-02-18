@@ -21,43 +21,56 @@ export default function Image() {
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          {/* BADGE */}
           <div
             style={{
-              display: "inline-flex",
-              alignSelf: "flex-start",
+              display: "flex",          // <-- era inline-flex (NON supportato)
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
               padding: "10px 14px",
-              borderRadius: 999,
+              borderRadius: "999px",
               backgroundColor: "rgba(225, 29, 46, 0.10)",
               color: "#e11d2e",
-              fontSize: 26,
+              fontSize: "26px",
               fontWeight: 800,
+              width: "340px",           // così “sembra” inline
             }}
           >
             FP Cgil Rovigo
           </div>
 
-          <div style={{ fontSize: 72, fontWeight: 900, letterSpacing: "-0.04em" }}>
+          <div style={{ fontSize: "72px", fontWeight: 900, letterSpacing: "-0.04em" }}>
             Operazione Verita
           </div>
 
-          <div style={{ fontSize: 34, lineHeight: 1.2, color: "#334155", fontWeight: 650 }}>
+          <div style={{ fontSize: "34px", lineHeight: 1.2, color: "#334155", fontWeight: 650 }}>
             Funzioni Locali (2021-2026)
             <br />
             numeri chiari, metodo trasparente
           </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-          <div style={{ fontSize: 22, color: "#475569" }}>
+        {/* FOOTER STRIP */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            gap: "24px",
+          }}
+        >
+          <div style={{ fontSize: "22px", color: "#475569" }}>
             Calcola pre/post, potere d&apos;acquisto e arretrati.
           </div>
 
           <div
             style={{
-              width: 420,
-              height: 14,
-              borderRadius: 999,
+              width: "420px",
+              height: "14px",
+              borderRadius: "999px",
               backgroundColor: "#e11d2e",
             }}
           />
