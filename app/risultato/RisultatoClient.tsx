@@ -17,6 +17,10 @@ type Row = {
   costo_al_mese: number;
 };
 
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
 export default function RisultatoClient() {
   const sp = useSearchParams();
   const inq = (sp.get("inq") ?? "C1").toUpperCase();
@@ -27,12 +31,12 @@ export default function RisultatoClient() {
   const [shareOpen, setShareOpen] = useState(false);
 
   const row = useMemo(() => {
-    const r = (ccnl as Row[]).find((x) => x.inquadramento === inq);
-    return r ?? (ccnl as Row[])[0];
+    const data = ccnl as Row[];
+    return data.find((x) => x.inquadramento === inq) ?? data[0];
   }, [inq]);
 
   const calc = useMemo(() => {
-    const fattore = Math.max(0.0, Math.min(1.0, ore / 36));
+    const fattore = clamp(ore / 36, 0, 1);
 
     const attuale = row.stipendio_attuale_2021 * fattore;
     const avrai = row.stipendio_che_avrai_2026 * fattore;
@@ -51,12 +55,13 @@ export default function RisultatoClient() {
     const taglio = row.taglio_governo_tre_anni * fattore;
     const costoMese = row.costo_al_mese * fattore;
 
-    const infl = inflazionePct / 100;
+    const infl = (Number.isFinite(inflazionePct) ? inflazionePct : 0) / 100;
     const necessarioPerTenerePotere = attuale * (1 + infl);
     const perditaPotereAnnua = Math.max(0, necessarioPerTenerePotere - avrai);
     const perditaPotereMensile = perditaPotereAnnua / 13;
 
     return {
+      fattore,
       attuale,
       avrai,
       piattaforma,
@@ -80,7 +85,7 @@ export default function RisultatoClient() {
     const url = window.location.href;
     try {
       await navigator.clipboard.writeText(url);
-      alert("Link copiato negli appunti ✅ (perfetto per Instagram)");
+      alert("Link copiato ✅ (perfetto per Instagram)");
     } catch {
       prompt("Copia questo link:", url);
     }
@@ -95,7 +100,7 @@ export default function RisultatoClient() {
   const shareNow = async () => {
     const url = window.location.href;
     const text =
-      `Operazione Verità – Funzioni Locali (FP Cgil Rovigo)\n` +
+      `Operazione Verita - Funzioni Locali (FP Cgil Rovigo)\n` +
       `Inquadramento ${inq}, ore ${ore}\n` +
       `Guarda il risultato: ${url}`;
 
@@ -103,16 +108,15 @@ export default function RisultatoClient() {
     if (typeof navAny.share === "function") {
       try {
         await navAny.share({
-          title: "Operazione Verità – FP Cgil Rovigo",
+          title: "Operazione Verita - FP Cgil Rovigo",
           text,
           url,
         });
         return;
       } catch {
-        // annullato o fallito: fallback menu desktop
+        // annullato o fallito: fallback menu
       }
     }
-
     setShareOpen((v) => !v);
   };
 
@@ -133,6 +137,11 @@ export default function RisultatoClient() {
     </button>
   );
 
+  const gapMese = calc.gapPiattaformaMese;
+  const gapMesePos = Math.max(0, gapMese);
+  const gapAnnPos = Math.max(0, calc.gapPiattaformaAnn);
+  const obiettivoRaggiunto = gapMese <= 0.0001;
+
   return (
     <main className="space-y-8">
       {/* HEADER RISULTATO */}
@@ -147,9 +156,9 @@ export default function RisultatoClient() {
           }}
         >
           <div>
-            <div className="ov-chip">Risultato • 2021→2026</div>
+            <div className="ov-chip">Risultato • 2021-2026</div>
             <div style={{ marginTop: 14 }} className="ov-h1">
-              Operazione Verità
+              Operazione Verita
             </div>
             <div style={{ marginTop: 6 }} className="ov-muted">
               Inquadramento{" "}
@@ -171,7 +180,7 @@ export default function RisultatoClient() {
               Condividi
             </button>
 
-            {/* menu fallback desktop */}
+            {/* fallback desktop */}
             {shareOpen && (
               <div
                 className="ov-card"
@@ -229,6 +238,7 @@ export default function RisultatoClient() {
               alignItems: "stretch",
             }}
           >
+            {/* AUMENTO */}
             <div
               className="ov-card"
               style={{
@@ -262,29 +272,72 @@ export default function RisultatoClient() {
               </div>
             </div>
 
+            {/* GAP RICHIESTA */}
             <div className="ov-card" style={{ padding: 18 }}>
               <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Scarto rispetto alla piattaforma (2026)
+                Quanto manca a quello che chiedevamo
               </div>
 
               <div
                 style={{
                   marginTop: 10,
-                  fontSize: 34,
-                  fontWeight: 950,
-                  letterSpacing: "-0.03em",
-                  lineHeight: 1.1,
+                  display: "flex",
+                  alignItems: "baseline",
+                  flexWrap: "wrap",
+                  gap: 10,
                 }}
               >
-                € {calc.gapPiattaformaMese.toFixed(2)}
-                <span className="ov-muted" style={{ fontSize: 14, fontWeight: 900 }}>
-                  {" "}
-                  / mese
-                </span>
+                <div
+                  style={{
+                    fontSize: 40,
+                    fontWeight: 950,
+                    letterSpacing: "-0.03em",
+                    lineHeight: 1.1,
+                    color: "var(--ov-text)",
+                  }}
+                >
+                  € {gapMesePos.toFixed(2)}
+                </div>
+
+                {obiettivoRaggiunto ? (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      fontSize: 14,
+                      fontWeight: 900,
+                      background: "rgba(16,185,129,0.12)",
+                      color: "#059669",
+                      border: "1px solid rgba(16,185,129,0.25)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Obiettivo raggiunto
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      fontSize: 14,
+                      fontWeight: 900,
+                      background: "rgba(225,29,46,0.10)",
+                      color: "#e11d2e",
+                      border: "1px solid rgba(225,29,46,0.25)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    al mese in meno
+                  </span>
+                )}
               </div>
 
               <div className="ov-muted" style={{ marginTop: 6 }}>
-                € {calc.gapPiattaformaAnn.toFixed(2)} / anno
+                € {gapAnnPos.toFixed(2)} / anno
               </div>
 
               <div
@@ -297,7 +350,8 @@ export default function RisultatoClient() {
                   lineHeight: 1.4,
                 }}
               >
-                (Piattaforma unitaria: € {calc.piattaforma.toFixed(2)} / anno)
+                Differenza tra l’obiettivo CGIL 2026 (€ {calc.piattaforma.toFixed(2)} / anno) e lo stipendio
+                2026 che avrai.
               </div>
             </div>
           </div>
@@ -376,7 +430,7 @@ export default function RisultatoClient() {
 
             <div className="ov-card" style={{ padding: 18 }}>
               <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Inflazione cumulata 2021→2026 (%)
+                Inflazione cumulata 2021–2026 (%)
               </div>
 
               <input
@@ -493,7 +547,7 @@ export default function RisultatoClient() {
                   <b>€ {calc.arretrati.toFixed(2)}</b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span className="ov-muted">Già anticipato in busta come IVC</span>
+                  <span className="ov-muted">Già anticipato in busta</span>
                   <b>€ {calc.anticipato.toFixed(2)}</b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
