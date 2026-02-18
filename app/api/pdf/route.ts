@@ -18,7 +18,7 @@ type Row = {
 };
 
 function safe(s: string) {
-  // Helvetica standard (WinAnsi) NON supporta alcuni simboli Unicode: → • – —
+  // Helvetica/WinAnsi non supporta vari simboli Unicode (→ • – — ecc.)
   return s
     .replaceAll("→", "->")
     .replaceAll("•", "-")
@@ -28,8 +28,12 @@ function safe(s: string) {
 }
 
 function euro(n: number) {
-  // In genere "€" è ok, ma lo teniamo comunque dentro safe()
+  // Manteniamo il simbolo € ma lo facciamo passare da safe() (extra-sicuro)
   return safe(`€ ${n.toFixed(2)}`);
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
 }
 
 export async function GET(req: Request) {
@@ -41,16 +45,22 @@ export async function GET(req: Request) {
     const inflazionePct = Number(url.searchParams.get("infl") ?? "18");
 
     if (!Number.isFinite(ore) || ore < 1 || ore > 40) {
-      return NextResponse.json({ error: "Parametro ore non valido (1..40)" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Parametro ore non valido (1..40)" },
+        { status: 400 }
+      );
     }
     if (!Number.isFinite(inflazionePct) || inflazionePct < 0 || inflazionePct > 100) {
-      return NextResponse.json({ error: "Parametro infl non valido (0..100)" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Parametro infl non valido (0..100)" },
+        { status: 400 }
+      );
     }
 
     const data = ccnl as Row[];
     const row = data.find((x) => x.inquadramento === inq) ?? data[0];
 
-    const fattore = Math.max(0.0, Math.min(1.0, ore / 36));
+    const fattore = clamp(ore / 36, 0, 1);
 
     const attuale = row.stipendio_attuale_2021 * fattore;
     const avrai = row.stipendio_che_avrai_2026 * fattore;
@@ -59,8 +69,12 @@ export async function GET(req: Request) {
     const deltaAnn = avrai - attuale;
     const deltaMese = deltaAnn / 13;
 
-    const gapPiattaformaAnn = piattaforma - avrai;
-    const gapPiattaformaMese = gapPiattaformaAnn / 13;
+    const gapAnn = piattaforma - avrai;
+    const gapMese = gapAnn / 13;
+
+    const obiettivoRaggiunto = gapMese <= 0.0001;
+    const gapAnnPos = Math.max(0, gapAnn);
+    const gapMesePos = Math.max(0, gapMese);
 
     const arretrati = row.arretrati_anni_2022_2024 * fattore;
     const anticipato = row.gia_anticipato_in_busta * fattore;
@@ -74,7 +88,7 @@ export async function GET(req: Request) {
     const perditaPotereAnnua = Math.max(0, necessarioPerTenerePotere - avrai);
     const perditaPotereMensile = perditaPotereAnnua / 13;
 
-    // --- PDF setup (A4 in points) ---
+    // ---- PDF setup (A4 points) ----
     const A4_W = 595.28;
     const A4_H = 841.89;
     const margin = 48;
@@ -93,7 +107,14 @@ export async function GET(req: Request) {
     let y = A4_H - margin;
 
     // Header
-    page.drawText(safe("FP Cgil Rovigo"), { x: margin, y, size: 12, font: fontBold, color: red });
+    page.drawText(safe("FP Cgil Rovigo"), {
+      x: margin,
+      y,
+      size: 12,
+      font: fontBold,
+      color: red,
+    });
+
     page.drawText(safe("Operazione Verita - Funzioni Locali (2021-2026)"), {
       x: margin,
       y: y - 18,
@@ -113,7 +134,13 @@ export async function GET(req: Request) {
     y -= 74;
 
     const section = (title: string) => {
-      page.drawText(safe(title), { x: margin, y, size: 12, font: fontBold, color: red });
+      page.drawText(safe(title), {
+        x: margin,
+        y,
+        size: 12,
+        font: fontBold,
+        color: red,
+      });
       y -= 18;
       page.drawLine({
         start: { x: margin, y },
@@ -130,16 +157,17 @@ export async function GET(req: Request) {
 
       page.drawText(L, { x: margin, y, size: 11, font, color: text });
 
-      const chosenFont = boldValue ? fontBold : font;
-      const w = chosenFont.widthOfTextAtSize(V, 11);
+      const chosen = boldValue ? fontBold : font;
+      const w = chosen.widthOfTextAtSize(V, 11);
 
       page.drawText(V, {
         x: A4_W - margin - w,
         y,
         size: 11,
-        font: chosenFont,
+        font: chosen,
         color: text,
       });
+
       y -= 18;
     };
 
@@ -150,8 +178,16 @@ export async function GET(req: Request) {
     line("Aumento medio (mensile su 13)", euro(deltaMese));
     line("Aumento medio (annuo)", euro(deltaAnn));
     y -= 6;
-    line("Scarto piattaforma (mensile su 13)", euro(gapPiattaformaMese));
-    line("Scarto piattaforma (annuo)", euro(gapPiattaformaAnn));
+
+    if (obiettivoRaggiunto) {
+      line("Quanto manca a quello che chiedevamo", safe("Obiettivo raggiunto"), true);
+    } else {
+      line("Quanto manca a quello che chiedevamo (mensile su 13)", euro(gapMesePos));
+      line("Quanto manca a quello che chiedevamo (annuo)", euro(gapAnnPos));
+    }
+
+    line("Nota", "Differenza tra l’obiettivo CGIL 2026 e lo stipendio 2026 che avrai.", false);
+
     y -= 18;
 
     // 2) POTERE D’ACQUISTO
@@ -174,13 +210,16 @@ export async function GET(req: Request) {
 
     // Footer
     page.drawText(
-      safe("Fonte: tabella CGIL fornita. Valori annui riproporzionati su base 36 ore. Verifica sempre con il cedolino."),
+      safe(
+        "Fonte: tabella CGIL fornita. Valori annui riproporzionati su base 36 ore. Verifica sempre con il cedolino."
+      ),
       { x: margin, y: margin - 6, size: 9, font, color: muted }
     );
 
     const bytes = await pdfDoc.save();
     const filename = `operazione-verita_${inq}_${ore}h.pdf`;
 
+    // Niente Buffer: compatibile ovunque
     return new NextResponse(Buffer.from(bytes), {
       headers: {
         "Content-Type": "application/pdf",
