@@ -112,7 +112,7 @@ export default function RisultatoClient() {
   const shareNow = async () => {
     const url = window.location.href;
     const text =
-      `Operazione Verita - Funzioni Locali (FP Cgil Rovigo)\n` +
+      `Operazione Verità - Funzioni Locali (FP Cgil Rovigo)\n` +
       `Inquadramento ${inq}, ore ${ore}\n` +
       `Guarda il risultato: ${url}`;
 
@@ -120,7 +120,7 @@ export default function RisultatoClient() {
     if (typeof navAny.share === "function") {
       try {
         await navAny.share({
-          title: "Operazione Verita - FP Cgil Rovigo",
+          title: "Operazione Verità - FP Cgil Rovigo",
           text,
           url,
         });
@@ -162,7 +162,7 @@ export default function RisultatoClient() {
           <div>
             <div className="ov-chip">Risultato • 2021-2026</div>
             <div style={{ marginTop: 14 }} className="ov-h1">
-              Operazione Verita
+              Operazione Verità
             </div>
             <div style={{ marginTop: 6 }} className="ov-muted">
               Inquadramento{" "}
