@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+
 import assemblee from "@/data/assemblee_marzo_2026.json";
 import ccnl from "@/data/ccnl_fl_2021_2026.json";
 
@@ -27,7 +28,10 @@ export default function RisultatoClient() {
   const ore = Number(sp.get("ore") ?? "36");
 
   const [tab, setTab] = useState<"prepost" | "potere" | "arretrati">("prepost");
-  const [inflazionePct, setInflazionePct] = useState<number>(18.0);
+
+  // Inflazione cumulata 2021–2026: intero 0..99 (max 2 cifre)
+  const [inflazionePct, setInflazionePct] = useState<number>(18);
+
   const [shareOpen, setShareOpen] = useState(false);
 
   const row = useMemo(() => {
@@ -45,8 +49,8 @@ export default function RisultatoClient() {
     const deltaAnn = avrai - attuale;
     const deltaMese = deltaAnn / 13;
 
-    const gapPiattaformaAnn = piattaforma - avrai;
-    const gapPiattaformaMese = gapPiattaformaAnn / 13;
+    const gapAnn = piattaforma - avrai;
+    const gapMese = gapAnn / 13;
 
     const arretrati = row.arretrati_anni_2022_2024 * fattore;
     const anticipato = row.gia_anticipato_in_busta * fattore;
@@ -55,7 +59,7 @@ export default function RisultatoClient() {
     const taglio = row.taglio_governo_tre_anni * fattore;
     const costoMese = row.costo_al_mese * fattore;
 
-    const infl = (Number.isFinite(inflazionePct) ? inflazionePct : 0) / 100;
+    const infl = clamp(inflazionePct, 0, 99) / 100;
     const necessarioPerTenerePotere = attuale * (1 + infl);
     const perditaPotereAnnua = Math.max(0, necessarioPerTenerePotere - avrai);
     const perditaPotereMensile = perditaPotereAnnua / 13;
@@ -67,13 +71,14 @@ export default function RisultatoClient() {
       piattaforma,
       deltaAnn,
       deltaMese,
-      gapPiattaformaAnn,
-      gapPiattaformaMese,
+      gapAnn,
+      gapMese,
       arretrati,
       anticipato,
       daRicevere,
       taglio,
       costoMese,
+      infl,
       necessarioPerTenerePotere,
       perditaPotereAnnua,
       perditaPotereMensile,
@@ -81,6 +86,13 @@ export default function RisultatoClient() {
   }, [ore, row, inflazionePct]);
 
   // ---- Actions ----
+  const downloadPdf = () => {
+    const url = `/api/pdf?inq=${encodeURIComponent(inq)}&ore=${encodeURIComponent(
+      String(ore)
+    )}&infl=${encodeURIComponent(String(inflazionePct))}`;
+    window.open(url, "_blank");
+  };
+
   const copyUrl = async () => {
     const url = window.location.href;
     try {
@@ -120,13 +132,6 @@ export default function RisultatoClient() {
     setShareOpen((v) => !v);
   };
 
-  const downloadPdf = () => {
-    const url = `/api/pdf?inq=${encodeURIComponent(inq)}&ore=${encodeURIComponent(
-      String(ore)
-    )}&infl=${encodeURIComponent(String(inflazionePct))}`;
-    window.open(url, "_blank");
-  };
-
   const Tab = (p: { id: typeof tab; label: string }) => (
     <button
       type="button"
@@ -137,10 +142,9 @@ export default function RisultatoClient() {
     </button>
   );
 
-  const gapMese = calc.gapPiattaformaMese;
-  const gapMesePos = Math.max(0, gapMese);
-  const gapAnnPos = Math.max(0, calc.gapPiattaformaAnn);
-  const obiettivoRaggiunto = gapMese <= 0.0001;
+  const gapMesePos = Math.max(0, calc.gapMese);
+  const gapAnnPos = Math.max(0, calc.gapAnn);
+  const obiettivoRaggiunto = calc.gapMese <= 0.0001;
 
   return (
     <main className="space-y-8">
@@ -350,8 +354,8 @@ export default function RisultatoClient() {
                   lineHeight: 1.4,
                 }}
               >
-                Differenza tra l’obiettivo CGIL 2026 (€ {calc.piattaforma.toFixed(2)} / anno) e lo stipendio
-                2026 che avrai.
+                Differenza tra l’obiettivo CGIL 2026 (€ {calc.piattaforma.toFixed(2)} / anno) e lo stipendio 2026
+                che avrai.
               </div>
             </div>
           </div>
@@ -430,17 +434,33 @@ export default function RisultatoClient() {
 
             <div className="ov-card" style={{ padding: 18 }}>
               <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Inflazione cumulata 2021–2026 (%)
+                Inflazione cumulata 2021–2026
               </div>
 
-              <input
-                className="ov-input"
-                type="number"
-                step="0.1"
-                value={inflazionePct}
-                onChange={(e) => setInflazionePct(Number(e.target.value))}
-                style={{ marginTop: 10 }}
-              />
+              {/* INPUT COMPATTO: max 2 cifre + % */}
+              <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+                <input
+                  className="ov-input"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={String(Math.round(inflazionePct))}
+                  onChange={(e) => {
+                    const onlyDigits = e.target.value.replace(/\D/g, "").slice(0, 2);
+                    const n = onlyDigits === "" ? 0 : Number(onlyDigits);
+                    setInflazionePct(n);
+                  }}
+                  style={{
+                    width: 84,
+                    textAlign: "center",
+                    paddingTop: 10,
+                    paddingBottom: 10,
+                    fontWeight: 900,
+                  }}
+                  aria-label="Inflazione cumulata 2021-2026 in percentuale"
+                />
+                <span style={{ fontWeight: 900, color: "var(--ov-text)" }}>%</span>
+              </div>
 
               <div
                 className="ov-muted"
