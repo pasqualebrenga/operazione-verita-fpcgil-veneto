@@ -5,9 +5,9 @@ import defaultAssemblee from "@/data/assemblee_marzo_2026.json";
 
 type Assemblea = {
   title: string;
-  date: string;  // 2026-03-02
-  start: string; // 09:00
-  end: string;   // 11:00
+  date: string;  // YYYY-MM-DD
+  start: string; // HH:MM
+  end: string;   // HH:MM
   place: string;
   mode: "da_remoto" | "in_presenza" | string;
 };
@@ -23,33 +23,47 @@ function emptyRow(): Assemblea {
   };
 }
 
+function sortKey(a: Assemblea) {
+  return `${a.date} ${a.start}`.trim();
+}
+
 export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [logged, setLogged] = useState(false);
 
-  const [rows, setRows] = useState<Assemblea[]>([]);
+  const [rows, setRows] = useState<Assemblea[]>((defaultAssemblee as any) as Assemblea[]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
   const [msg, setMsg] = useState<string | null>(null);
 
+  const canEdit = useMemo(() => logged && password.length > 0, [logged, password]);
+
+  // recupera password salvata (comodità)
   useEffect(() => {
     const saved = sessionStorage.getItem("admin_password");
     if (saved) setPassword(saved);
   }, []);
 
-  const canEdit = useMemo(() => logged && password.length > 0, [logged, password]);
-
   async function load() {
     setLoading(true);
     setMsg(null);
+
     try {
       const res = await fetch("/api/assemblee", { cache: "no-store" });
-      const json = await res.json();
-      const data = json?.data;
+      const bodyText = await res.text();
+      let bodyJson: any = null;
+      try {
+        bodyJson = JSON.parse(bodyText);
+      } catch {
+        bodyJson = null;
+      }
+
+      const data = bodyJson?.data;
       if (Array.isArray(data)) setRows(data);
-      else setRows(defaultAssemblee as any);
+      else setRows((defaultAssemblee as any) as Assemblea[]);
     } catch {
-      setRows(defaultAssemblee as any);
+      setRows((defaultAssemblee as any) as Assemblea[]);
     } finally {
       setLoading(false);
     }
@@ -68,6 +82,12 @@ export default function AdminPage() {
     setTimeout(() => setMsg(null), 1500);
   }
 
+  function logout() {
+    setLogged(false);
+    setMsg("Admin disattivato");
+    setTimeout(() => setMsg(null), 1500);
+  }
+
   function updateRow(i: number, patch: Partial<Assemblea>) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
@@ -81,18 +101,13 @@ export default function AdminPage() {
   }
 
   function sortByDate() {
-    setRows((prev) =>
-      [...prev].sort((a, b) => {
-        const ka = `${a.date} ${a.start}`.trim();
-        const kb = `${b.date} ${b.start}`.trim();
-        return ka.localeCompare(kb);
-      })
-    );
+    setRows((prev) => [...prev].sort((a, b) => sortKey(a).localeCompare(sortKey(b))));
   }
 
   async function save() {
     setSaving(true);
     setMsg(null);
+
     try {
       const res = await fetch("/api/assemblee", {
         method: "POST",
@@ -100,15 +115,23 @@ export default function AdminPage() {
         body: JSON.stringify({ password, data: rows }),
       });
 
+      // body sempre leggibile
+      const bodyText = await res.text();
+      let bodyJson: any = null;
+      try {
+        bodyJson = JSON.parse(bodyText);
+      } catch {
+        bodyJson = null;
+      }
+
       if (res.status === 401) {
         setMsg("Password errata ❌");
         setLogged(false);
         return;
       }
 
-      const json = await res.json().catch(() => null);
       if (!res.ok) {
-        setMsg(`Errore salvataggio ❌ (HTTP ${res.status}) ${json?.error ?? text ?? "unknown"}`);
+        setMsg(`Errore salvataggio ❌ (HTTP ${res.status}) ${bodyJson?.error ?? bodyText ?? "unknown"}`);
         return;
       }
 
@@ -126,7 +149,7 @@ export default function AdminPage() {
       <section className="ov-card" style={{ padding: 24 }}>
         <div className="ov-h1">Admin assemblee</div>
         <div className="ov-muted" style={{ marginTop: 6 }}>
-          Aggiungi/rimuovi/modifica. Salvataggio su Upstash (Redis).
+          Aggiungi / rimuovi / modifica. Salvataggio su Upstash via API.
         </div>
 
         <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -138,8 +161,13 @@ export default function AdminPage() {
             onChange={(e) => setPassword(e.target.value)}
             style={{ maxWidth: 320 }}
           />
+
           <button type="button" className="ov-btn ov-btn-primary" onClick={doLogin}>
             Attiva admin
+          </button>
+
+          <button type="button" className="ov-btn ov-btn-ghost" onClick={logout} disabled={!logged}>
+            Disattiva
           </button>
 
           <button type="button" className="ov-btn ov-btn-ghost" onClick={load} disabled={loading}>
@@ -163,7 +191,7 @@ export default function AdminPage() {
       </section>
 
       <section className="ov-card" style={{ padding: 24, marginTop: 12 }}>
-        <div className="ov-h2">Elenco</div>
+        <div className="ov-h2">Elenco assemblee</div>
 
         {loading ? (
           <div className="ov-muted" style={{ marginTop: 10 }}>Caricamento…</div>
@@ -171,19 +199,71 @@ export default function AdminPage() {
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
             {rows.map((r, i) => (
               <div key={`${r.date}-${r.start}-${i}`} className="ov-card" style={{ padding: 16 }}>
-                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1.2fr 0.7fr 0.5fr 0.5fr 1.2fr 0.7fr auto" }}>
-                  <input className="ov-input" value={r.title} onChange={(e) => updateRow(i, { title: e.target.value })} disabled={!canEdit} placeholder="Titolo" />
-                  <input className="ov-input" value={r.date} onChange={(e) => updateRow(i, { date: e.target.value })} disabled={!canEdit} placeholder="YYYY-MM-DD" />
-                  <input className="ov-input" value={r.start} onChange={(e) => updateRow(i, { start: e.target.value })} disabled={!canEdit} placeholder="HH:MM" />
-                  <input className="ov-input" value={r.end} onChange={(e) => updateRow(i, { end: e.target.value })} disabled={!canEdit} placeholder="HH:MM" />
-                  <input className="ov-input" value={r.place} onChange={(e) => updateRow(i, { place: e.target.value })} disabled={!canEdit} placeholder="Luogo" />
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 10,
+                    gridTemplateColumns: "1.2fr 0.7fr 0.5fr 0.5fr 1.2fr 0.7fr auto",
+                    alignItems: "center",
+                  }}
+                >
+                  <input
+                    className="ov-input"
+                    value={r.title}
+                    onChange={(e) => updateRow(i, { title: e.target.value })}
+                    disabled={!canEdit}
+                    placeholder="Titolo"
+                  />
 
-                  <select className="ov-select" value={r.mode} onChange={(e) => updateRow(i, { mode: e.target.value })} disabled={!canEdit}>
+                  <input
+                    className="ov-input"
+                    value={r.date}
+                    onChange={(e) => updateRow(i, { date: e.target.value })}
+                    disabled={!canEdit}
+                    placeholder="YYYY-MM-DD"
+                  />
+
+                  <input
+                    className="ov-input"
+                    value={r.start}
+                    onChange={(e) => updateRow(i, { start: e.target.value })}
+                    disabled={!canEdit}
+                    placeholder="HH:MM"
+                  />
+
+                  <input
+                    className="ov-input"
+                    value={r.end}
+                    onChange={(e) => updateRow(i, { end: e.target.value })}
+                    disabled={!canEdit}
+                    placeholder="HH:MM"
+                  />
+
+                  <input
+                    className="ov-input"
+                    value={r.place}
+                    onChange={(e) => updateRow(i, { place: e.target.value })}
+                    disabled={!canEdit}
+                    placeholder="Luogo"
+                  />
+
+                  <select
+                    className="ov-select"
+                    value={r.mode}
+                    onChange={(e) => updateRow(i, { mode: e.target.value })}
+                    disabled={!canEdit}
+                  >
                     <option value="in_presenza">In presenza</option>
                     <option value="da_remoto">Da remoto</option>
                   </select>
 
-                  <button type="button" className="ov-btn ov-btn-ghost" onClick={() => removeRow(i)} disabled={!canEdit} title="Rimuovi">
+                  <button
+                    type="button"
+                    className="ov-btn ov-btn-ghost"
+                    onClick={() => removeRow(i)}
+                    disabled={!canEdit}
+                    title="Rimuovi"
+                  >
                     ✕
                   </button>
                 </div>
