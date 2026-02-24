@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-import assemblee from "@/data/assemblee_marzo_2026.json";
+import defaultAssemblee from "@/data/assemblee_marzo_2026.json";
 import ccnl from "@/data/ccnl_fl_2021_2026.json";
 
-type Row = {
+// --- schema vecchio (2021-2026) ---
+type OldRow = {
   inquadramento: string;
   stipendio_attuale_2021: number;
   stipendio_minimo_piattaforma_2026: number;
@@ -18,8 +19,44 @@ type Row = {
   costo_al_mese: number;
 };
 
+// --- schema nuovo (tabella aggiornata) ---
+type NewRow = {
+  inquadramento: string;
+  stipendio_mensile_2019_2021: number;
+  aumento_mensile_lordo_2022_2024: number;
+  stipendio_tabellare_2022_2024: number;
+  anticipo_mensile_2022_2024: number;
+  differenza_mensile_da_percepire_2024_2025: number;
+  riduzione_valore_reale_percent: number;
+  arretrati_fino_feb_2026: number;
+  conglobamento_indennita_comparto_2026_13: number;
+  stipendio_con_conglobamento_2026: number;
+  nuova_indennita_comparto_2026_12: number;
+  nuova_indennita_comparto_2026_var: number;
+};
+
+type AnyRow = OldRow | NewRow;
+
+type Assemblea = {
+  title: string;
+  date: string;
+  start: string;
+  end: string;
+  place: string;
+  mode: string;
+};
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+function only2Digits(value: string) {
+  return value.replace(/\D/g, "").slice(0, 2);
+}
+function isOldRow(r: AnyRow): r is OldRow {
+  return (r as any).stipendio_attuale_2021 !== undefined;
+}
+function isNewRow(r: AnyRow): r is NewRow {
+  return (r as any).stipendio_mensile_2019_2021 !== undefined;
 }
 
 export default function RisultatoClient() {
@@ -29,67 +66,117 @@ export default function RisultatoClient() {
 
   const [tab, setTab] = useState<"prepost" | "potere" | "arretrati">("prepost");
 
-  // Inflazione cumulata 2021–2026: intero 0..99 (max 2 cifre)
-  const [inflazionePct, setInflazionePct] = useState<number>(18);
+  // Inflazione default sempre 18 (2 cifre)
+  const [inflStr, setInflStr] = useState<string>("18");
+
+  // Assemblee: da API (Upstash) con fallback al JSON
+  const [assembleeState, setAssembleeState] = useState<Assemblea[]>(
+    (defaultAssemblee as any) as Assemblea[]
+  );
 
   const [shareOpen, setShareOpen] = useState(false);
 
+  // carica assemblee da Upstash (se presenti)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/assemblee", { cache: "no-store" });
+        const json = await res.json();
+        if (Array.isArray(json?.data)) setAssembleeState(json.data);
+        else setAssembleeState((defaultAssemblee as any) as Assemblea[]);
+      } catch {
+        setAssembleeState((defaultAssemblee as any) as Assemblea[]);
+      }
+    })();
+  }, []);
+
   const row = useMemo(() => {
-    const data = ccnl as Row[];
-    return data.find((x) => x.inquadramento === inq) ?? data[0];
+    const data = (ccnl as unknown as AnyRow[]) ?? [];
+    return (data.find((x) => (x as any).inquadramento === inq) ?? data[0]) as AnyRow;
   }, [inq]);
+
+  const dataset = useMemo(() => {
+    if (isOldRow(row)) return "old";
+    if (isNewRow(row)) return "new";
+    return "unknown";
+  }, [row]);
+
+  const inflazionePct = useMemo(() => {
+    const n = inflStr === "" ? 0 : Number(inflStr);
+    return clamp(Number.isFinite(n) ? n : 0, 0, 99);
+  }, [inflStr]);
 
   const calc = useMemo(() => {
     const fattore = clamp(ore / 36, 0, 1);
 
-    const attuale = row.stipendio_attuale_2021 * fattore;
-    const avrai = row.stipendio_che_avrai_2026 * fattore;
-    const piattaforma = row.stipendio_minimo_piattaforma_2026 * fattore;
+    // Normalizziamo tutto per UI:
+    // base/finale = annuo (13 mensilità)
+    // aumentoMese = quello che mostriamo nel box
+    let baseAnn = 0;
+    let finaleAnn = 0;
+    let aumentoMese = 0;
+    let aumentoAnn = 0;
 
-    const deltaAnn = avrai - attuale;
-    const deltaMese = deltaAnn / 13;
+    let arretratiTot = 0;
+    let arretratiGia = 0;
+    let arretratiDa = 0;
 
-    const gapAnn = piattaforma - avrai;
-    const gapMese = gapAnn / 13;
+    let riduzioneValoreRealePct: number | null = null;
 
-    const arretrati = row.arretrati_anni_2022_2024 * fattore;
-    const anticipato = row.gia_anticipato_in_busta * fattore;
-    const daRicevere = row.da_ricevere_per_gli_anni_2022_2024 * fattore;
+    if (isOldRow(row)) {
+      baseAnn = row.stipendio_attuale_2021 * fattore;
+      finaleAnn = row.stipendio_che_avrai_2026 * fattore;
 
-    const taglio = row.taglio_governo_tre_anni * fattore;
-    const costoMese = row.costo_al_mese * fattore;
+      aumentoAnn = finaleAnn - baseAnn;
+      aumentoMese = aumentoAnn / 13;
 
-    const infl = clamp(inflazionePct, 0, 99) / 100;
-    const necessarioPerTenerePotere = attuale * (1 + infl);
-    const perditaPotereAnnua = Math.max(0, necessarioPerTenerePotere - avrai);
-    const perditaPotereMensile = perditaPotereAnnua / 13;
+      arretratiTot = row.arretrati_anni_2022_2024 * fattore;
+      arretratiGia = row.gia_anticipato_in_busta * fattore;
+      arretratiDa = row.da_ricevere_per_gli_anni_2022_2024 * fattore;
+    } else if (isNewRow(row)) {
+      // nuovo: mensile -> annuo (13)
+      baseAnn = row.stipendio_mensile_2019_2021 * 13 * fattore;
+      finaleAnn = row.stipendio_con_conglobamento_2026 * 13 * fattore;
+
+      // “aumento” come differenza mensile da percepire 2024-2025 (dato tabella)
+      aumentoMese = row.differenza_mensile_da_percepire_2024_2025 * fattore;
+      aumentoAnn = aumentoMese * 13;
+
+      arretratiTot = row.arretrati_fino_feb_2026 * fattore;
+      arretratiGia = 0;
+      arretratiDa = arretratiTot;
+
+      riduzioneValoreRealePct = row.riduzione_valore_reale_percent;
+    }
+
+    // Potere d’acquisto (calcolo nostro con inflazione scelta)
+    const infl = inflazionePct / 100;
+    const necessario = baseAnn * (1 + infl);
+    const perditaAnn = Math.max(0, necessario - finaleAnn);
+    const perditaMese = perditaAnn / 13;
 
     return {
       fattore,
-      attuale,
-      avrai,
-      piattaforma,
-      deltaAnn,
-      deltaMese,
-      gapAnn,
-      gapMese,
-      arretrati,
-      anticipato,
-      daRicevere,
-      taglio,
-      costoMese,
-      infl,
-      necessarioPerTenerePotere,
-      perditaPotereAnnua,
-      perditaPotereMensile,
+      baseAnn,
+      finaleAnn,
+      aumentoMese,
+      aumentoAnn,
+      arretratiTot,
+      arretratiGia,
+      arretratiDa,
+      inflazionePct,
+      necessario,
+      perditaAnn,
+      perditaMese,
+      riduzioneValoreRealePct,
     };
   }, [ore, row, inflazionePct]);
 
-  // ---- Actions ----
+  // ---- actions
   const downloadPdf = () => {
     const url = `/api/pdf?inq=${encodeURIComponent(inq)}&ore=${encodeURIComponent(
       String(ore)
-    )}&infl=${encodeURIComponent(String(inflazionePct))}`;
+    )}&infl=${encodeURIComponent(String(calc.inflazionePct))}`;
     window.open(url, "_blank");
   };
 
@@ -112,7 +199,7 @@ export default function RisultatoClient() {
   const shareNow = async () => {
     const url = window.location.href;
     const text =
-      `Operazione Verità - Funzioni Locali (FP Cgil Rovigo)\n` +
+      `Operazione Verita - Funzioni Locali (FP Cgil Rovigo)\n` +
       `Inquadramento ${inq}, ore ${ore}\n` +
       `Guarda il risultato: ${url}`;
 
@@ -120,19 +207,19 @@ export default function RisultatoClient() {
     if (typeof navAny.share === "function") {
       try {
         await navAny.share({
-          title: "Operazione Verità - FP Cgil Rovigo",
+          title: "Operazione Verita - FP Cgil Rovigo",
           text,
           url,
         });
         return;
       } catch {
-        // annullato o fallito: fallback menu
+        // fallback
       }
     }
     setShareOpen((v) => !v);
   };
 
-  const Tab = (p: { id: typeof tab; label: string }) => (
+  const Tab = (p: { id: "prepost" | "potere" | "arretrati"; label: string }) => (
     <button
       type="button"
       onClick={() => setTab(p.id)}
@@ -142,13 +229,9 @@ export default function RisultatoClient() {
     </button>
   );
 
-  const gapMesePos = Math.max(0, calc.gapMese);
-  const gapAnnPos = Math.max(0, calc.gapAnn);
-  const obiettivoRaggiunto = calc.gapMese <= 0.0001;
-
   return (
     <main className="space-y-8">
-      {/* HEADER RISULTATO */}
+      {/* HEADER */}
       <section className="ov-card" style={{ padding: 24 }}>
         <div
           style={{
@@ -160,9 +243,9 @@ export default function RisultatoClient() {
           }}
         >
           <div>
-            <div className="ov-chip">Risultato • 2021-2026</div>
+            <div className="ov-chip">Risultato</div>
             <div style={{ marginTop: 14 }} className="ov-h1">
-              Operazione Verità
+              Operazione Verita
             </div>
             <div style={{ marginTop: 6 }} className="ov-muted">
               Inquadramento{" "}
@@ -184,7 +267,6 @@ export default function RisultatoClient() {
               Condividi
             </button>
 
-            {/* fallback desktop */}
             {shareOpen && (
               <div
                 className="ov-card"
@@ -221,16 +303,22 @@ export default function RisultatoClient() {
         <div style={{ marginTop: 16 }} className="ov-tabs">
           <Tab id="prepost" label="Pre / Post" />
           <Tab id="potere" label="Potere d’acquisto (in €)" />
-          <Tab id="arretrati" label="Arretrati 22–24" />
+          <Tab id="arretrati" label="Arretrati" />
+        </div>
+
+        <div className="ov-muted" style={{ marginTop: 10, fontSize: 12 }}>
+          Dataset: <b>{dataset}</b>
         </div>
       </section>
 
-      {/* TAB 1: PRE/POST */}
+      {/* TAB PRE/POST */}
       {tab === "prepost" && (
         <section className="ov-card" style={{ padding: 24 }}>
-          <div className="ov-h2">Differenza 2021 → 2026</div>
+          <div className="ov-h2">Differenza</div>
           <div className="ov-muted" style={{ marginTop: 6 }}>
-            La cifra qui sotto è la variazione mensile (su 13 mensilità).
+            {dataset === "new"
+              ? "Con tabella nuova: usiamo la differenza mensile da percepire 2024–2025."
+              : "Variazione mensile su 13 mensilità (calcolata da stipendio 2021 → 2026)."}
           </div>
 
           <div
@@ -239,10 +327,9 @@ export default function RisultatoClient() {
               display: "grid",
               gap: 12,
               gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-              alignItems: "stretch",
             }}
           >
-            {/* AUMENTO */}
+            {/* aumento */}
             <div
               className="ov-card"
               style={{
@@ -254,7 +341,6 @@ export default function RisultatoClient() {
               <div className="ov-muted" style={{ fontWeight: 900 }}>
                 Aumento medio
               </div>
-
               <div
                 style={{
                   marginTop: 8,
@@ -264,63 +350,44 @@ export default function RisultatoClient() {
                   lineHeight: 1.0,
                 }}
               >
-                € {calc.deltaMese.toFixed(2)}
+                € {calc.aumentoMese.toFixed(2)}
               </div>
-
               <div className="ov-muted" style={{ marginTop: 6, fontWeight: 900 }}>
                 al mese
               </div>
-
               <div className="ov-muted" style={{ marginTop: 10 }}>
-                € {calc.deltaAnn.toFixed(2)} / anno (13 mensilità)
+                € {calc.aumentoAnn.toFixed(2)} / anno (13 mensilità)
               </div>
             </div>
 
-            {/* GAP RICHIESTA */}
-            <div className="ov-card" style={{ padding: 18 }}>
-              <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Quanto manca a quello che chiedevamo
-              </div>
-
-              <div
-                style={{
-                  marginTop: 10,
-                  display: "flex",
-                  alignItems: "baseline",
-                  flexWrap: "wrap",
-                  gap: 10,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 40,
-                    fontWeight: 950,
-                    letterSpacing: "-0.03em",
-                    lineHeight: 1.1,
-                    color: "var(--ov-text)",
-                  }}
-                >
-                  € {gapMesePos.toFixed(2)}
+            {/* box 2 */}
+            {dataset === "new" ? (
+              <div className="ov-card" style={{ padding: 18 }}>
+                <div className="ov-muted" style={{ fontWeight: 900 }}>
+                  Riduzione del valore reale dello stipendio
                 </div>
 
-                {obiettivoRaggiunto ? (
-                  <span
+                <div
+                  style={{
+                    marginTop: 10,
+                    display: "flex",
+                    alignItems: "baseline",
+                    flexWrap: "wrap",
+                    gap: 10,
+                  }}
+                >
+                  <div
                     style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      padding: "6px 10px",
-                      borderRadius: 999,
-                      fontSize: 14,
-                      fontWeight: 900,
-                      background: "rgba(16,185,129,0.12)",
-                      color: "#059669",
-                      border: "1px solid rgba(16,185,129,0.25)",
-                      whiteSpace: "nowrap",
+                      fontSize: 40,
+                      fontWeight: 950,
+                      letterSpacing: "-0.03em",
+                      lineHeight: 1.1,
+                      color: "var(--ov-text)",
                     }}
                   >
-                    Obiettivo raggiunto
-                  </span>
-                ) : (
+                    {calc.riduzioneValoreRealePct == null ? "—" : calc.riduzioneValoreRealePct.toFixed(2)}%
+                  </div>
+
                   <span
                     style={{
                       display: "inline-flex",
@@ -335,29 +402,34 @@ export default function RisultatoClient() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    al mese in meno
+                    valore reale in meno
                   </span>
-                )}
-              </div>
+                </div>
 
-              <div className="ov-muted" style={{ marginTop: 6 }}>
-                € {gapAnnPos.toFixed(2)} / anno
+                <div
+                  className="ov-muted"
+                  style={{
+                    marginTop: 12,
+                    fontSize: 12,
+                    borderTop: "1px solid var(--ov-border2)",
+                    paddingTop: 12,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Dato già presente nella tabella CGIL (non è un calcolo del sito).
+                </div>
               </div>
-
-              <div
-                className="ov-muted"
-                style={{
-                  marginTop: 12,
-                  fontSize: 12,
-                  borderTop: "1px solid var(--ov-border2)",
-                  paddingTop: 12,
-                  lineHeight: 1.4,
-                }}
-              >
-                Differenza tra l’obiettivo CGIL 2026 (€ {calc.piattaforma.toFixed(2)} / anno) e lo stipendio 2026
-                che avrai.
+            ) : (
+              <div className="ov-card" style={{ padding: 18 }}>
+                <div className="ov-muted" style={{ fontWeight: 900 }}>
+                  Nota
+                </div>
+                <div className="ov-muted" style={{ marginTop: 10 }}>
+                  Con dataset vecchio era disponibile anche “Quanto manca a quello che chiedevamo” (piattaforma 2026).
+                  Con la tabella nuova quel dato non esiste e non lo inventiamo.
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div
@@ -371,23 +443,23 @@ export default function RisultatoClient() {
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span className="ov-muted">Stipendio 2021</span>
-              <b>€ {calc.attuale.toFixed(2)} / anno</b>
+              <span className="ov-muted">Stipendio base (annuo)</span>
+              <b>€ {calc.baseAnn.toFixed(2)} / anno</b>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span className="ov-muted">Stipendio 2026 (che avrai)</span>
-              <b>€ {calc.avrai.toFixed(2)} / anno</b>
+              <span className="ov-muted">Stipendio finale (annuo)</span>
+              <b>€ {calc.finaleAnn.toFixed(2)} / anno</b>
             </div>
           </div>
         </section>
       )}
 
-      {/* TAB 2: POTERE D’ACQUISTO */}
+      {/* TAB POTERE */}
       {tab === "potere" && (
         <section className="ov-card" style={{ padding: 24 }}>
           <div className="ov-h2">Potere d’acquisto (in €)</div>
           <div className="ov-muted" style={{ marginTop: 6 }}>
-            Nel 2026: quanto perdi rispetto al tuo stipendio 2021 rivalutato per inflazione.
+            Quanto perdi nel 2026 rispetto allo stipendio base rivalutato per inflazione.
           </div>
 
           <div
@@ -396,7 +468,6 @@ export default function RisultatoClient() {
               display: "grid",
               gap: 12,
               gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-              alignItems: "stretch",
             }}
           >
             <div
@@ -420,7 +491,7 @@ export default function RisultatoClient() {
                   lineHeight: 1.0,
                 }}
               >
-                € {calc.perditaPotereMensile.toFixed(2)}
+                € {calc.perditaMese.toFixed(2)}
               </div>
 
               <div className="ov-muted" style={{ marginTop: 6, fontWeight: 900 }}>
@@ -428,35 +499,34 @@ export default function RisultatoClient() {
               </div>
 
               <div className="ov-muted" style={{ marginTop: 10 }}>
-                € {calc.perditaPotereAnnua.toFixed(2)} / anno
+                € {calc.perditaAnn.toFixed(2)} / anno
               </div>
             </div>
 
             <div className="ov-card" style={{ padding: 18 }}>
               <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Inflazione cumulata 2021–2026
+                Inflazione cumulata 2021–2026 (%)
               </div>
 
-              {/* INPUT COMPATTO: max 2 cifre + % */}
               <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
                 <input
-                  className="ov-input"
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  value={String(Math.round(inflazionePct))}
-                  onChange={(e) => {
-                    const onlyDigits = e.target.value.replace(/\D/g, "").slice(0, 2);
-                    const n = onlyDigits === "" ? 0 : Number(onlyDigits);
-                    setInflazionePct(n);
-                  }}
+                  value={inflStr}
+                  onChange={(e) => setInflStr(only2Digits(e.target.value))}
+                  className="ov-input"
                   style={{
-                    width: 84,
+                    width: 80,
+                    maxWidth: 80,
+                    minWidth: 80,
+                    display: "inline-block",
                     textAlign: "center",
                     paddingTop: 10,
                     paddingBottom: 10,
                     fontWeight: 900,
                   }}
+                  placeholder="18"
                   aria-label="Inflazione cumulata 2021-2026 in percentuale"
                 />
                 <span style={{ fontWeight: 900, color: "var(--ov-text)" }}>%</span>
@@ -472,46 +542,31 @@ export default function RisultatoClient() {
                   paddingTop: 12,
                 }}
               >
-                Calcolo: necessario = stipendio 2021 × (1 + inflazione).<br />
-                Perdita = max(0, necessario − stipendio 2026).
+                Calcolo: necessario = stipendio base × (1 + inflazione).<br />
+                Perdita = max(0, necessario − stipendio finale).
               </div>
             </div>
           </div>
 
-          <div
-            className="ov-card"
-            style={{
-              marginTop: 12,
-              padding: 16,
-              display: "grid",
-              gap: 8,
-              fontSize: 14,
-            }}
-          >
+          <div className="ov-card" style={{ marginTop: 12, padding: 16, display: "grid", gap: 8, fontSize: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span className="ov-muted">Stipendio 2021 (base)</span>
-              <b>€ {calc.attuale.toFixed(2)} / anno</b>
+              <span className="ov-muted">Necessario (per non perdere)</span>
+              <b>€ {calc.necessario.toFixed(2)} / anno</b>
             </div>
-
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span className="ov-muted">Necessario nel 2026 (per non perdere)</span>
-              <b>€ {calc.necessarioPerTenerePotere.toFixed(2)} / anno</b>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span className="ov-muted">Stipendio 2026 (che avrai)</span>
-              <b>€ {calc.avrai.toFixed(2)} / anno</b>
+              <span className="ov-muted">Stipendio finale</span>
+              <b>€ {calc.finaleAnn.toFixed(2)} / anno</b>
             </div>
           </div>
         </section>
       )}
 
-      {/* TAB 3: ARRETRATI */}
+      {/* TAB ARRETRATI */}
       {tab === "arretrati" && (
         <section className="ov-card" style={{ padding: 24 }}>
-          <div className="ov-h2">Arretrati 2022–2024</div>
+          <div className="ov-h2">Arretrati</div>
           <div className="ov-muted" style={{ marginTop: 6 }}>
-            Qui trovi il totale arretrati e quanto ti resta ancora da ricevere.
+            {dataset === "new" ? "Tabella nuova: arretrati calcolati fino a febbraio 2026." : "Arretrati 2022–2024."}
           </div>
 
           <div
@@ -520,7 +575,6 @@ export default function RisultatoClient() {
               display: "grid",
               gap: 12,
               gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-              alignItems: "stretch",
             }}
           >
             <div
@@ -532,7 +586,7 @@ export default function RisultatoClient() {
               }}
             >
               <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Da ricevere (2022–2024)
+                Da ricevere
               </div>
 
               <div
@@ -544,7 +598,7 @@ export default function RisultatoClient() {
                   lineHeight: 1.0,
                 }}
               >
-                € {calc.daRicevere.toFixed(2)}
+                € {calc.arretratiDa.toFixed(2)}
               </div>
 
               <div className="ov-muted" style={{ marginTop: 6, fontWeight: 900 }}>
@@ -552,65 +606,35 @@ export default function RisultatoClient() {
               </div>
 
               <div className="ov-muted" style={{ marginTop: 10 }}>
-                (Totale arretrati: € {calc.arretrati.toFixed(2)})
+                (Totale: € {calc.arretratiTot.toFixed(2)})
               </div>
             </div>
 
             <div className="ov-card" style={{ padding: 18 }}>
               <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Dettagli arretrati
+                Dettagli
               </div>
 
               <div style={{ marginTop: 12, display: "grid", gap: 10, fontSize: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                   <span className="ov-muted">Totale arretrati</span>
-                  <b>€ {calc.arretrati.toFixed(2)}</b>
+                  <b>€ {calc.arretratiTot.toFixed(2)}</b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span className="ov-muted">Già anticipato in busta</span>
-                  <b>€ {calc.anticipato.toFixed(2)}</b>
+                  <span className="ov-muted">Già anticipato</span>
+                  <b>€ {calc.arretratiGia.toFixed(2)}</b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                   <span className="ov-muted">Da ricevere</span>
-                  <b>€ {calc.daRicevere.toFixed(2)}</b>
-                </div>
-              </div>
-
-              <div
-                className="ov-muted"
-                style={{
-                  marginTop: 12,
-                  fontSize: 12,
-                  borderTop: "1px solid var(--ov-border2)",
-                  paddingTop: 12,
-                  lineHeight: 1.4,
-                }}
-              >
-                Altri indicatori (tabella CGIL): taglio 3 anni e “costo mese”.
-              </div>
-
-              <div style={{ marginTop: 10, display: "grid", gap: 8, fontSize: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span className="ov-muted">Taglio complessivo (3 anni)</span>
-                  <b>€ {calc.taglio.toFixed(2)}</b>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span className="ov-muted">Costo al mese</span>
-                  <b>€ {calc.costoMese.toFixed(2)}</b>
+                  <b>€ {calc.arretratiDa.toFixed(2)}</b>
                 </div>
               </div>
             </div>
           </div>
-
-          <div style={{ marginTop: 12 }}>
-            <a href="/" className="ov-btn ov-btn-primary ov-btn-sm">
-              Torna al calcolatore
-            </a>
-          </div>
         </section>
       )}
 
-      {/* ASSEMBLEE (sempre visibili) */}
+      {/* ASSEMBLEE (da Upstash con fallback JSON) */}
       <section className="ov-card" style={{ padding: 24 }}>
         <div
           style={{
@@ -622,9 +646,9 @@ export default function RisultatoClient() {
           }}
         >
           <div>
-            <div className="ov-h2">Assemblee di marzo</div>
+            <div className="ov-h2">Assemblee</div>
             <div className="ov-muted" style={{ marginTop: 4 }}>
-              Hai verificato i numeri. Ora portiamoli in assemblea.
+              Aggiornate via admin (Upstash) — se vuoto, usa il JSON di default.
             </div>
           </div>
 
@@ -634,8 +658,8 @@ export default function RisultatoClient() {
         </div>
 
         <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
-          {(assemblee as any[]).map((e) => (
-            <div key={e.date + e.title} className="ov-card" style={{ padding: 16 }}>
+          {assembleeState.map((e) => (
+            <div key={`${e.date}-${e.start}-${e.title}`} className="ov-card" style={{ padding: 16 }}>
               <div style={{ fontWeight: 900 }}>{e.title}</div>
               <div className="ov-muted">
                 {e.date} • {e.start}–{e.end} • {e.place}
