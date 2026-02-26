@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import defaultAssemblee from "@/data/assemblee_marzo_2026.json";
 import ccnl from "@/data/ccnl_fl_2021_2026.json";
 
+import { calcolaIvcGiaPercepita } from "@/lib/ivc";
+
 // --- schema vecchio (2021-2026) ---
 type OldRow = {
   inquadramento: string;
@@ -59,6 +61,27 @@ function isNewRow(r: AnyRow): r is NewRow {
   return (r as any).stipendio_mensile_2019_2021 !== undefined;
 }
 
+// --- ASSEMBLEE: teniamo SOLO quella online ---
+function isOnlineAssemblea(e: Assemblea) {
+  const t = (e.title ?? "").toLowerCase();
+  const p = (e.place ?? "").toLowerCase();
+  const m = (e.mode ?? "").toLowerCase();
+  const s = `${t} ${p} ${m}`;
+
+  return (
+    s.includes("online") ||
+    s.includes("teams") ||
+    s.includes("zoom") ||
+    s.includes("meet") ||
+    s.includes("webinar") ||
+    s.includes("stream")
+  );
+}
+function keepOnlyOneOnline(list: Assemblea[]) {
+  const online = (list ?? []).filter(isOnlineAssemblea);
+  return online.length ? [online[0]] : [];
+}
+
 export default function RisultatoClient() {
   const sp = useSearchParams();
   const inq = (sp.get("inq") ?? "C1").toUpperCase();
@@ -66,26 +89,28 @@ export default function RisultatoClient() {
 
   const [tab, setTab] = useState<"prepost" | "potere" | "arretrati">("prepost");
 
-  // Inflazione default sempre 18 (2 cifre)
   const [inflStr, setInflStr] = useState<string>("18");
 
-  // Assemblee: da API (Upstash) con fallback al JSON
   const [assembleeState, setAssembleeState] = useState<Assemblea[]>(
-    (defaultAssemblee as any) as Assemblea[]
+    keepOnlyOneOnline((defaultAssemblee as any) as Assemblea[])
   );
 
   const [shareOpen, setShareOpen] = useState(false);
 
-  // carica assemblee da Upstash (se presenti)
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/assemblee", { cache: "no-store" });
-        const json = await res.json();
-        if (Array.isArray(json?.data)) setAssembleeState(json.data);
-        else setAssembleeState((defaultAssemblee as any) as Assemblea[]);
+        const r = await fetch("/api/assemblee", { cache: "no-store" });
+        if (!r.ok) throw new Error("assemblee api not ok");
+        const j = await r.json();
+
+        const list = Array.isArray(j) ? (j as Assemblea[]) : [];
+        const filtered = keepOnlyOneOnline(list);
+
+        if (filtered.length) setAssembleeState(filtered);
+        else setAssembleeState(keepOnlyOneOnline((defaultAssemblee as any) as Assemblea[]));
       } catch {
-        setAssembleeState((defaultAssemblee as any) as Assemblea[]);
+        setAssembleeState(keepOnlyOneOnline((defaultAssemblee as any) as Assemblea[]));
       }
     })();
   }, []);
@@ -109,9 +134,6 @@ export default function RisultatoClient() {
   const calc = useMemo(() => {
     const fattore = clamp(ore / 36, 0, 1);
 
-    // Normalizziamo tutto per UI:
-    // base/finale = annuo (13 mensilità)
-    // aumentoMese = quello che mostriamo nel box
     let baseAnn = 0;
     let finaleAnn = 0;
     let aumentoMese = 0;
@@ -134,22 +156,26 @@ export default function RisultatoClient() {
       arretratiGia = row.gia_anticipato_in_busta * fattore;
       arretratiDa = row.da_ricevere_per_gli_anni_2022_2024 * fattore;
     } else if (isNewRow(row)) {
-      // nuovo: mensile -> annuo (13)
       baseAnn = row.stipendio_mensile_2019_2021 * 13 * fattore;
       finaleAnn = row.stipendio_con_conglobamento_2026 * 13 * fattore;
 
-      // “aumento” come differenza mensile da percepire 2024-2025 (dato tabella)
       aumentoMese = row.differenza_mensile_da_percepire_2024_2025 * fattore;
       aumentoAnn = aumentoMese * 13;
 
       arretratiTot = row.arretrati_fino_feb_2026 * fattore;
-      arretratiGia = 0;
-      arretratiDa = arretratiTot;
+
+      const ivc = calcolaIvcGiaPercepita({
+        inq,
+        oreSettimanali: ore,
+        mesi2026DaSottrarre: 2,
+      });
+
+      arretratiGia = ivc.totale;
+      arretratiDa = Math.max(0, arretratiTot - arretratiGia);
 
       riduzioneValoreRealePct = row.riduzione_valore_reale_percent;
     }
 
-    // Potere d’acquisto (calcolo nostro con inflazione scelta)
     const infl = inflazionePct / 100;
     const necessario = baseAnn * (1 + infl);
     const perditaAnn = Math.max(0, necessario - finaleAnn);
@@ -170,9 +196,8 @@ export default function RisultatoClient() {
       perditaMese,
       riduzioneValoreRealePct,
     };
-  }, [ore, row, inflazionePct]);
+  }, [inq, ore, row, inflazionePct]);
 
-  // ---- actions
   const downloadPdf = () => {
     const url = `/api/pdf?inq=${encodeURIComponent(inq)}&ore=${encodeURIComponent(
       String(ore)
@@ -231,7 +256,6 @@ export default function RisultatoClient() {
 
   return (
     <main className="space-y-8">
-      {/* HEADER */}
       <section className="ov-card" style={{ padding: 24 }}>
         <div
           style={{
@@ -290,7 +314,6 @@ export default function RisultatoClient() {
                     type="button"
                     onClick={() => setShareOpen(false)}
                     className="ov-btn ov-btn-ghost ov-btn-sm"
-                    style={{ opacity: 0.85 }}
                   >
                     Chiudi
                   </button>
@@ -299,124 +322,58 @@ export default function RisultatoClient() {
             )}
           </div>
         </div>
+      </section>
 
-        <div style={{ marginTop: 16 }} className="ov-tabs">
-          <Tab id="prepost" label="Pre / Post" />
-          <Tab id="potere" label="Potere d’acquisto (in €)" />
+      <section className="ov-card" style={{ padding: 16 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Tab id="prepost" label="Prima/Dopo" />
+          <Tab id="potere" label="Potere d’acquisto" />
           <Tab id="arretrati" label="Arretrati" />
-        </div>
-
-        <div className="ov-muted" style={{ marginTop: 10, fontSize: 12 }}>
-          Dataset: <b>{dataset}</b>
         </div>
       </section>
 
-      {/* TAB PRE/POST */}
       {tab === "prepost" && (
         <section className="ov-card" style={{ padding: 24 }}>
-          <div className="ov-h2">Differenza</div>
-          <div className="ov-muted" style={{ marginTop: 6 }}>
-            {dataset === "new"
-              ? "Con tabella nuova: usiamo la differenza mensile da percepire 2024–2025."
-              : "Variazione mensile su 13 mensilità (calcolata da stipendio 2021 → 2026)."}
-          </div>
+          <div className="ov-h2">Prima / Dopo</div>
 
-          <div
-            style={{
-              marginTop: 16,
-              display: "grid",
-              gap: 12,
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            }}
-          >
-            {/* aumento */}
-            <div
-              className="ov-card"
-              style={{
-                padding: 18,
-                border: "1px solid rgba(225,29,46,0.25)",
-                boxShadow: "0 12px 32px rgba(225,29,46,0.10)",
-              }}
-            >
+          <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+            <div className="ov-card" style={{ padding: 18 }}>
               <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Aumento medio
+                Aumento mensile (lordo)
               </div>
-              <div
-                style={{
-                  marginTop: 8,
-                  fontSize: 56,
-                  fontWeight: 950,
-                  letterSpacing: "-0.04em",
-                  lineHeight: 1.0,
-                }}
-              >
+              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
                 € {calc.aumentoMese.toFixed(2)}
               </div>
-              <div className="ov-muted" style={{ marginTop: 6, fontWeight: 900 }}>
-                al mese
-              </div>
-              <div className="ov-muted" style={{ marginTop: 10 }}>
-                € {calc.aumentoAnn.toFixed(2)} / anno (13 mensilità)
+              <div className="ov-muted" style={{ marginTop: 6 }}>
+                (13 mensilità) = € {calc.aumentoAnn.toFixed(2)} annui
               </div>
             </div>
 
-            {/* box 2 */}
+            <div className="ov-card" style={{ padding: 18 }}>
+              <div className="ov-muted" style={{ fontWeight: 900 }}>
+                Stipendio base annuo
+              </div>
+              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
+                € {calc.baseAnn.toFixed(2)}
+              </div>
+            </div>
+
+            <div className="ov-card" style={{ padding: 18 }}>
+              <div className="ov-muted" style={{ fontWeight: 900 }}>
+                Stipendio annuo “dopo” (2026)
+              </div>
+              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
+                € {calc.finaleAnn.toFixed(2)}
+              </div>
+            </div>
+
             {dataset === "new" ? (
               <div className="ov-card" style={{ padding: 18 }}>
                 <div className="ov-muted" style={{ fontWeight: 900 }}>
-                  Riduzione del valore reale dello stipendio
+                  Nota
                 </div>
-
-                <div
-                  style={{
-                    marginTop: 10,
-                    display: "flex",
-                    alignItems: "baseline",
-                    flexWrap: "wrap",
-                    gap: 10,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 40,
-                      fontWeight: 950,
-                      letterSpacing: "-0.03em",
-                      lineHeight: 1.1,
-                      color: "var(--ov-text)",
-                    }}
-                  >
-                    {calc.riduzioneValoreRealePct == null ? "—" : calc.riduzioneValoreRealePct.toFixed(2)}%
-                  </div>
-
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      padding: "6px 10px",
-                      borderRadius: 999,
-                      fontSize: 14,
-                      fontWeight: 900,
-                      background: "rgba(225,29,46,0.10)",
-                      color: "#e11d2e",
-                      border: "1px solid rgba(225,29,46,0.25)",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    valore reale in meno
-                  </span>
-                </div>
-
-                <div
-                  className="ov-muted"
-                  style={{
-                    marginTop: 12,
-                    fontSize: 12,
-                    borderTop: "1px solid var(--ov-border2)",
-                    paddingTop: 12,
-                    lineHeight: 1.4,
-                  }}
-                >
-                  Dato già presente nella tabella CGIL (non è un calcolo del sito).
+                <div className="ov-muted" style={{ marginTop: 10 }}>
+                  Dato “Aumento mensile” e “Arretrati fino a febbraio 2026” vengono dalla tabella CGIL.
                 </div>
               </div>
             ) : (
@@ -431,182 +388,80 @@ export default function RisultatoClient() {
               </div>
             )}
           </div>
-
-          <div
-            className="ov-card"
-            style={{
-              marginTop: 12,
-              padding: 16,
-              display: "grid",
-              gap: 8,
-              fontSize: 14,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span className="ov-muted">Stipendio base (annuo)</span>
-              <b>€ {calc.baseAnn.toFixed(2)} / anno</b>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span className="ov-muted">Stipendio finale (annuo)</span>
-              <b>€ {calc.finaleAnn.toFixed(2)} / anno</b>
-            </div>
-          </div>
         </section>
       )}
 
-      {/* TAB POTERE */}
       {tab === "potere" && (
         <section className="ov-card" style={{ padding: 24 }}>
-          <div className="ov-h2">Potere d’acquisto (in €)</div>
-          <div className="ov-muted" style={{ marginTop: 6 }}>
-            Quanto perdi nel 2026 rispetto allo stipendio base rivalutato per inflazione.
+          <div className="ov-h2">Potere d’acquisto</div>
+
+          <div className="ov-muted" style={{ marginTop: 10 }}>
+            Scegli inflazione (stimata) per vedere quanto manca al mantenimento del potere d’acquisto.
           </div>
 
-          <div
-            style={{
-              marginTop: 16,
-              display: "grid",
-              gap: 12,
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            }}
-          >
-            <div
-              className="ov-card"
-              style={{
-                padding: 18,
-                border: "1px solid rgba(225,29,46,0.25)",
-                boxShadow: "0 12px 32px rgba(225,29,46,0.10)",
-              }}
-            >
+          <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <div className="ov-muted" style={{ fontWeight: 900 }}>
+              Inflazione (%)
+            </div>
+            <input
+              value={inflStr}
+              onChange={(e) => setInflStr(only2Digits(e.target.value))}
+              className="ov-input"
+              inputMode="numeric"
+              style={{ width: 90 }}
+            />
+          </div>
+
+          <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+            <div className="ov-card" style={{ padding: 18 }}>
               <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Perdita di potere d’acquisto
+                Stipendio necessario (annuo)
               </div>
-
-              <div
-                style={{
-                  marginTop: 8,
-                  fontSize: 56,
-                  fontWeight: 950,
-                  letterSpacing: "-0.04em",
-                  lineHeight: 1.0,
-                }}
-              >
-                € {calc.perditaMese.toFixed(2)}
-              </div>
-
-              <div className="ov-muted" style={{ marginTop: 6, fontWeight: 900 }}>
-                al mese
-              </div>
-
-              <div className="ov-muted" style={{ marginTop: 10 }}>
-                € {calc.perditaAnn.toFixed(2)} / anno
+              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
+                € {calc.necessario.toFixed(2)}
               </div>
             </div>
 
             <div className="ov-card" style={{ padding: 18 }}>
               <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Inflazione cumulata 2021–2026 (%)
+                Perdita annua stimata
               </div>
-
-              <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={inflStr}
-                  onChange={(e) => setInflStr(only2Digits(e.target.value))}
-                  className="ov-input"
-                  style={{
-                    width: 80,
-                    maxWidth: 80,
-                    minWidth: 80,
-                    display: "inline-block",
-                    textAlign: "center",
-                    paddingTop: 10,
-                    paddingBottom: 10,
-                    fontWeight: 900,
-                  }}
-                  placeholder="18"
-                  aria-label="Inflazione cumulata 2021-2026 in percentuale"
-                />
-                <span style={{ fontWeight: 900, color: "var(--ov-text)" }}>%</span>
+              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
+                € {calc.perditaAnn.toFixed(2)}
               </div>
-
-              <div
-                className="ov-muted"
-                style={{
-                  marginTop: 10,
-                  fontSize: 12,
-                  lineHeight: 1.4,
-                  borderTop: "1px solid var(--ov-border2)",
-                  paddingTop: 12,
-                }}
-              >
-                Calcolo: necessario = stipendio base × (1 + inflazione).<br />
-                Perdita = max(0, necessario − stipendio finale).
+              <div className="ov-muted" style={{ marginTop: 6 }}>
+                al mese ≈ € {calc.perditaMese.toFixed(2)}
               </div>
             </div>
-          </div>
 
-          <div className="ov-card" style={{ marginTop: 12, padding: 16, display: "grid", gap: 8, fontSize: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span className="ov-muted">Necessario (per non perdere)</span>
-              <b>€ {calc.necessario.toFixed(2)} / anno</b>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span className="ov-muted">Stipendio finale</span>
-              <b>€ {calc.finaleAnn.toFixed(2)} / anno</b>
-            </div>
+            {calc.riduzioneValoreRealePct !== null && (
+              <div className="ov-card" style={{ padding: 18 }}>
+                <div className="ov-muted" style={{ fontWeight: 900 }}>
+                  Riduzione valore reale (tabella CGIL)
+                </div>
+                <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
+                  {calc.riduzioneValoreRealePct.toFixed(2)}%
+                </div>
+              </div>
+            )}
           </div>
         </section>
       )}
 
-      {/* TAB ARRETRATI */}
       {tab === "arretrati" && (
         <section className="ov-card" style={{ padding: 24 }}>
           <div className="ov-h2">Arretrati</div>
-          <div className="ov-muted" style={{ marginTop: 6 }}>
-            {dataset === "new" ? "Tabella nuova: arretrati calcolati fino a febbraio 2026." : "Arretrati 2022–2024."}
-          </div>
 
-          <div
-            style={{
-              marginTop: 16,
-              display: "grid",
-              gap: 12,
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            }}
-          >
-            <div
-              className="ov-card"
-              style={{
-                padding: 18,
-                border: "1px solid rgba(225,29,46,0.25)",
-                boxShadow: "0 12px 32px rgba(225,29,46,0.10)",
-              }}
-            >
+          <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+            <div className="ov-card" style={{ padding: 18 }}>
               <div className="ov-muted" style={{ fontWeight: 900 }}>
                 Da ricevere
               </div>
-
-              <div
-                style={{
-                  marginTop: 8,
-                  fontSize: 56,
-                  fontWeight: 950,
-                  letterSpacing: "-0.04em",
-                  lineHeight: 1.0,
-                }}
-              >
+              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
                 € {calc.arretratiDa.toFixed(2)}
               </div>
-
-              <div className="ov-muted" style={{ marginTop: 6, fontWeight: 900 }}>
-                una tantum
-              </div>
-
-              <div className="ov-muted" style={{ marginTop: 10 }}>
-                (Totale: € {calc.arretratiTot.toFixed(2)})
+              <div className="ov-muted" style={{ marginTop: 6 }}>
+                Totale tabella: € {calc.arretratiTot.toFixed(2)}
               </div>
             </div>
 
@@ -621,7 +476,7 @@ export default function RisultatoClient() {
                   <b>€ {calc.arretratiTot.toFixed(2)}</b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span className="ov-muted">Già anticipato</span>
+                  <span className="ov-muted">{dataset === "new" ? "IVC già ricevuta" : "Già anticipato"}</span>
                   <b>€ {calc.arretratiGia.toFixed(2)}</b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
@@ -634,22 +489,12 @@ export default function RisultatoClient() {
         </section>
       )}
 
-      {/* ASSEMBLEE (da Upstash con fallback JSON) */}
+      {/* ASSEMBLEA: SOLO ONLINE */}
       <section className="ov-card" style={{ padding: 24 }}>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 12,
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <div className="ov-h2">Assemblee</div>
-            <div className="ov-muted" style={{ marginTop: 4 }}>
-              Aggiornate via admin (Upstash) — se vuoto, usa il JSON di default.
-            </div>
+            <div className="ov-h2">Assemblea online</div>
+
           </div>
 
           <a href="/api/ics" className="ov-btn ov-btn-primary ov-btn-sm">
@@ -658,25 +503,21 @@ export default function RisultatoClient() {
         </div>
 
         <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
-          {assembleeState.map((e) => (
-            <div key={`${e.date}-${e.start}-${e.title}`} className="ov-card" style={{ padding: 16 }}>
-              <div style={{ fontWeight: 900 }}>{e.title}</div>
-              <div className="ov-muted">
-                {e.date} • {e.start}–{e.end} • {e.place}
+          {assembleeState.length === 0 ? (
+            <div className="ov-muted">Nessuna assemblea online pubblicata al momento.</div>
+          ) : (
+            assembleeState.map((e) => (
+              <div key={`${e.date}-${e.start}-${e.title}`} className="ov-card" style={{ padding: 16 }}>
+                <div style={{ fontWeight: 900 }}>{e.title}</div>
+                <div className="ov-muted">
+                  {e.date} • {e.start}–{e.end} • {e.place}
+                </div>
+                <div className="ov-muted">{e.mode}</div>
               </div>
-              <div className="ov-muted" style={{ fontSize: 12 }}>
-                {e.mode === "da_remoto" ? "Da remoto" : "In presenza"}
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </section>
-
-      <div style={{ display: "flex", justifyContent: "flex-start" }}>
-        <a href="/" className="ov-btn ov-btn-ghost ov-btn-sm">
-          Torna al calcolatore
-        </a>
-      </div>
     </main>
   );
 }

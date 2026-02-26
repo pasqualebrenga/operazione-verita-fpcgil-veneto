@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
@@ -12,13 +12,21 @@ const INQ = [
   "D1","D2","D3","D4","D5","D6","D7"
 ] as const;
 
-// ✅ Niente coerce: oreSettimanali è NUMBER vero
-const schema = z.object({
-  inq: z.enum(INQ),
-  oreSettimanali: z.number().min(1).max(40),
-});
+type Inq = (typeof INQ)[number];
+const INQ_FOR_ZOD = INQ as unknown as [Inq, ...Inq[]];
 
-type FormData = z.infer<typeof schema>;
+// Output “pulito” dopo Zod (ore = number)
+const schema = z.object({
+  inq: z.enum(INQ_FOR_ZOD),
+  oreSettimanali: z.coerce.number().int().min(1).max(40),
+});
+type FormOutput = z.infer<typeof schema>;
+
+// Input “raw” dei campi (ore = string)
+type FormInput = {
+  inq: Inq;
+  oreSettimanali: string;
+};
 
 export default function HomePage() {
   const router = useRouter();
@@ -27,18 +35,28 @@ export default function HomePage() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    defaultValues: { inq: "C1", oreSettimanali: 36 },
+  } = useForm<FormInput, any, FormOutput>({
+    resolver: zodResolver(schema) as unknown as Resolver<FormInput, any, FormOutput>,
+    defaultValues: {
+      inq: "C1",
+      oreSettimanali: "36",
+    },
     mode: "onSubmit",
   });
 
-  const onSubmit = (data: FormData) => {
+  const onSubmit = (data: FormOutput) => {
     const params = new URLSearchParams({
       inq: data.inq,
       ore: String(data.oreSettimanali),
     });
     router.push(`/risultato?${params.toString()}`);
+  };
+
+  // stessa altezza per select + input (così sono identici)
+  const controlStyle: React.CSSProperties = {
+    height: 44,
+    width: "100%",
+    boxSizing: "border-box",
   };
 
   return (
@@ -51,8 +69,7 @@ export default function HomePage() {
         </h1>
 
         <p className="ov-muted" style={{ marginTop: 10, maxWidth: 820, lineHeight: 1.5 }}>
-          Inserisci il tuo inquadramento e le ore settimanali. In un click vedi l’aumento medio,
-          lo scarto piattaforma e la perdita di potere d’acquisto (in euro).
+          Inserisci il tuo inquadramento e le ore settimanali. In un click vedi aumento, arretrati e potere d’acquisto.
         </p>
 
         <form onSubmit={handleSubmit(onSubmit)} style={{ marginTop: 18 }}>
@@ -60,13 +77,13 @@ export default function HomePage() {
             style={{
               display: "grid",
               gap: 12,
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              gridTemplateColumns: "repeat(2, minmax(260px, 1fr))",
               alignItems: "end",
             }}
           >
             <label style={{ display: "grid", gap: 6 }}>
               <div style={{ fontSize: 14, fontWeight: 900 }}>Inquadramento</div>
-              <select className="ov-select" {...register("inq")}>
+              <select className="ov-select" style={controlStyle} {...register("inq")}>
                 {INQ.map((x) => (
                   <option key={x} value={x}>
                     {x}
@@ -78,11 +95,14 @@ export default function HomePage() {
             <label style={{ display: "grid", gap: 6 }}>
               <div style={{ fontSize: 14, fontWeight: 900 }}>Ore settimanali</div>
               <input
-                className="ov-input"
-                type="number"
-                step="1"
-                // ✅ questo fa arrivare un number vero a RHF, quindi z.number() è felice
-                {...register("oreSettimanali", { valueAsNumber: true })}
+                className="ov-select"
+                style={controlStyle}
+                type="text"
+                inputMode="numeric"
+                {...register("oreSettimanali", {
+                  setValueAs: (v) => String(v ?? "").trim().replace(",", "."),
+                })}
+                aria-invalid={errors.oreSettimanali ? "true" : "false"}
               />
               {errors.oreSettimanali && (
                 <div style={{ fontSize: 12, color: "var(--ov-red)", fontWeight: 900 }}>
@@ -99,10 +119,6 @@ export default function HomePage() {
           >
             Calcola
           </button>
-
-          <div className="ov-muted" style={{ marginTop: 12, fontSize: 12 }}>
-            Dati: tabella CGIL (valori annui). Riproporzionamento part-time su base 36 ore.
-          </div>
         </form>
       </section>
     </main>
