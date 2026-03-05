@@ -5,10 +5,10 @@ import { useSearchParams } from "next/navigation";
 
 import defaultAssemblee from "@/data/assemblee_marzo_2026.json";
 import ccnl from "@/data/ccnl_fl_2021_2026.json";
-
 import { calcolaIvcGiaPercepita } from "@/lib/ivc";
 
-// --- schema vecchio (2021-2026) ---
+const MEET_URL = (process.env.NEXT_PUBLIC_ASSEMBLEA_MEET_URL ?? "").trim();
+
 type OldRow = {
   inquadramento: string;
   stipendio_attuale_2021: number;
@@ -21,7 +21,6 @@ type OldRow = {
   costo_al_mese: number;
 };
 
-// --- schema nuovo (tabella aggiornata) ---
 type NewRow = {
   inquadramento: string;
   stipendio_mensile_2019_2021: number;
@@ -61,13 +60,8 @@ function isNewRow(r: AnyRow): r is NewRow {
   return (r as any).stipendio_mensile_2019_2021 !== undefined;
 }
 
-// --- ASSEMBLEE: teniamo SOLO quella online ---
 function isOnlineAssemblea(e: Assemblea) {
-  const t = (e.title ?? "").toLowerCase();
-  const p = (e.place ?? "").toLowerCase();
-  const m = (e.mode ?? "").toLowerCase();
-  const s = `${t} ${p} ${m}`;
-
+  const s = `${e.title ?? ""} ${e.place ?? ""} ${e.mode ?? ""}`.toLowerCase();
   return (
     s.includes("online") ||
     s.includes("teams") ||
@@ -82,20 +76,27 @@ function keepOnlyOneOnline(list: Assemblea[]) {
   return online.length ? [online[0]] : [];
 }
 
+async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("Link copiato ✅");
+  } catch {
+    prompt("Copia questo link:", text);
+  }
+}
+
 export default function RisultatoClient() {
   const sp = useSearchParams();
   const inq = (sp.get("inq") ?? "C1").toUpperCase();
   const ore = Number(sp.get("ore") ?? "36");
 
   const [tab, setTab] = useState<"prepost" | "potere" | "arretrati">("prepost");
-
-  const [inflStr, setInflStr] = useState<string>("18");
+  const [inflStr, setInflStr] = useState("18");
+  const [shareOpen, setShareOpen] = useState(false);
 
   const [assembleeState, setAssembleeState] = useState<Assemblea[]>(
     keepOnlyOneOnline((defaultAssemblee as any) as Assemblea[])
   );
-
-  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -103,12 +104,11 @@ export default function RisultatoClient() {
         const r = await fetch("/api/assemblee", { cache: "no-store" });
         if (!r.ok) throw new Error("assemblee api not ok");
         const j = await r.json();
-
         const list = Array.isArray(j) ? (j as Assemblea[]) : [];
         const filtered = keepOnlyOneOnline(list);
-
-        if (filtered.length) setAssembleeState(filtered);
-        else setAssembleeState(keepOnlyOneOnline((defaultAssemblee as any) as Assemblea[]));
+        setAssembleeState(
+          filtered.length ? filtered : keepOnlyOneOnline((defaultAssemblee as any) as Assemblea[])
+        );
       } catch {
         setAssembleeState(keepOnlyOneOnline((defaultAssemblee as any) as Assemblea[]));
       }
@@ -120,11 +120,10 @@ export default function RisultatoClient() {
     return (data.find((x) => (x as any).inquadramento === inq) ?? data[0]) as AnyRow;
   }, [inq]);
 
-  const dataset = useMemo(() => {
-    if (isOldRow(row)) return "old";
-    if (isNewRow(row)) return "new";
-    return "unknown";
-  }, [row]);
+  const dataset = useMemo(
+    () => (isOldRow(row) ? "old" : isNewRow(row) ? "new" : "unknown"),
+    [row]
+  );
 
   const inflazionePct = useMemo(() => {
     const n = inflStr === "" ? 0 : Number(inflStr);
@@ -182,9 +181,6 @@ export default function RisultatoClient() {
     const perditaMese = perditaAnn / 13;
 
     return {
-      fattore,
-      baseAnn,
-      finaleAnn,
       aumentoMese,
       aumentoAnn,
       arretratiTot,
@@ -205,37 +201,27 @@ export default function RisultatoClient() {
     window.open(url, "_blank");
   };
 
-  const copyUrl = async () => {
-    const url = window.location.href;
-    try {
-      await navigator.clipboard.writeText(url);
-      alert("Link copiato ✅ (perfetto per Instagram)");
-    } catch {
-      prompt("Copia questo link:", url);
-    }
-  };
-
   const shareFacebook = () => {
     const url = window.location.href;
-    const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
-    window.open(fb, "_blank", "noopener,noreferrer");
+    window.open(
+      `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
+
+  const copyUrl = async () => {
+    await copyToClipboard(window.location.href);
   };
 
   const shareNow = async () => {
     const url = window.location.href;
-    const text =
-      `Operazione Verita - Funzioni Locali (FP Cgil Rovigo)\n` +
-      `Inquadramento ${inq}, ore ${ore}\n` +
-      `Guarda il risultato: ${url}`;
+    const text = `Operazione Verità – Funzioni Locali\nInquadramento ${inq}, ore ${ore}\n${url}`;
 
     const navAny = navigator as any;
     if (typeof navAny.share === "function") {
       try {
-        await navAny.share({
-          title: "Operazione Verita - FP Cgil Rovigo",
-          text,
-          url,
-        });
+        await navAny.share({ title: "Operazione Verità", text, url });
         return;
       } catch {
         // fallback
@@ -256,6 +242,7 @@ export default function RisultatoClient() {
 
   return (
     <main className="space-y-8">
+      {/* Header risultato */}
       <section className="ov-card" style={{ padding: 24 }}>
         <div
           style={{
@@ -269,12 +256,11 @@ export default function RisultatoClient() {
           <div>
             <div className="ov-chip">Risultato</div>
             <div style={{ marginTop: 14 }} className="ov-h1">
-              Operazione Verita
+              Operazione Verità
             </div>
             <div style={{ marginTop: 6 }} className="ov-muted">
-              Inquadramento{" "}
-              <span style={{ color: "var(--ov-text)", fontWeight: 900 }}>{inq}</span> • ore{" "}
-              <span style={{ color: "var(--ov-text)", fontWeight: 900 }}>{ore}</span>
+              Inquadramento <b style={{ color: "var(--ov-text)" }}>{inq}</b> • ore{" "}
+              <b style={{ color: "var(--ov-text)" }}>{ore}</b>
             </div>
           </div>
 
@@ -310,11 +296,7 @@ export default function RisultatoClient() {
                   <button type="button" onClick={copyUrl} className="ov-btn ov-btn-ghost ov-btn-sm">
                     Copia link (Instagram)
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setShareOpen(false)}
-                    className="ov-btn ov-btn-ghost ov-btn-sm"
-                  >
+                  <button type="button" onClick={() => setShareOpen(false)} className="ov-btn ov-btn-ghost ov-btn-sm">
                     Chiudi
                   </button>
                 </div>
@@ -324,6 +306,7 @@ export default function RisultatoClient() {
         </div>
       </section>
 
+      {/* Tabs */}
       <section className="ov-card" style={{ padding: 16 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <Tab id="prepost" label="Prima/Dopo" />
@@ -332,65 +315,46 @@ export default function RisultatoClient() {
         </div>
       </section>
 
+      {/* TAB: Prima/Dopo (solo aumento mensile evidenziato) */}
       {tab === "prepost" && (
         <section className="ov-card" style={{ padding: 24 }}>
-          <div className="ov-h2">Prima / Dopo</div>
+          <div className="ov-h2">Aumento mensile</div>
 
-          <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
-            <div className="ov-card" style={{ padding: 18 }}>
-              <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Aumento mensile (lordo)
-              </div>
-              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
-                € {calc.aumentoMese.toFixed(2)}
-              </div>
-              <div className="ov-muted" style={{ marginTop: 6 }}>
-                (13 mensilità) = € {calc.aumentoAnn.toFixed(2)} annui
-              </div>
+          <div
+            className="ov-card"
+            style={{
+              padding: 22,
+              marginTop: 16,
+              border: "2px solid #c40000",
+              background: "rgba(196, 0, 0, 0.06)",
+              textAlign: "center",
+            }}
+          >
+            <div className="ov-muted" style={{ fontWeight: 900, letterSpacing: 0.2 }}>
+              Aumento mensile (lordo)
             </div>
 
-            <div className="ov-card" style={{ padding: 18 }}>
-              <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Stipendio base annuo
-              </div>
-              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
-                € {calc.baseAnn.toFixed(2)}
-              </div>
+            <div style={{ marginTop: 12, fontSize: 56, fontWeight: 950, color: "#c40000", lineHeight: 1.05 }}>
+              € {calc.aumentoMese.toFixed(2)}
             </div>
 
-            <div className="ov-card" style={{ padding: 18 }}>
-              <div className="ov-muted" style={{ fontWeight: 900 }}>
-                Stipendio annuo “dopo” (2026)
-              </div>
-              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
-                € {calc.finaleAnn.toFixed(2)}
-              </div>
+            <div className="ov-muted" style={{ marginTop: 10, fontSize: 14 }}>
+              Su 13 mensilità: € {calc.aumentoAnn.toFixed(2)} annui
             </div>
+          </div>
 
-            {dataset === "new" ? (
-              <div className="ov-card" style={{ padding: 18 }}>
-                <div className="ov-muted" style={{ fontWeight: 900 }}>
-                  Nota
-                </div>
-                <div className="ov-muted" style={{ marginTop: 10 }}>
-                  Dato “Aumento mensile” e “Arretrati fino a febbraio 2026” vengono dalla tabella CGIL.
-                </div>
-              </div>
-            ) : (
-              <div className="ov-card" style={{ padding: 18 }}>
-                <div className="ov-muted" style={{ fontWeight: 900 }}>
-                  Nota
-                </div>
-                <div className="ov-muted" style={{ marginTop: 10 }}>
-                  Con dataset vecchio era disponibile anche “Quanto manca a quello che chiedevamo” (piattaforma 2026).
-                  Con la tabella nuova quel dato non esiste e non lo inventiamo.
-                </div>
-              </div>
-            )}
+          <div className="ov-card" style={{ padding: 18, marginTop: 12 }}>
+            <div className="ov-muted" style={{ fontWeight: 900 }}>
+              Nota
+            </div>
+            <div className="ov-muted" style={{ marginTop: 10 }}>
+              Qui abbiamo scelto di dare risalto solo all’aumento mensile lordo.
+            </div>
           </div>
         </section>
       )}
 
+      {/* TAB: Potere d’acquisto */}
       {tab === "potere" && (
         <section className="ov-card" style={{ padding: 24 }}>
           <div className="ov-h2">Potere d’acquisto</div>
@@ -417,18 +381,14 @@ export default function RisultatoClient() {
               <div className="ov-muted" style={{ fontWeight: 900 }}>
                 Stipendio necessario (annuo)
               </div>
-              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
-                € {calc.necessario.toFixed(2)}
-              </div>
+              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>€ {calc.necessario.toFixed(2)}</div>
             </div>
 
             <div className="ov-card" style={{ padding: 18 }}>
               <div className="ov-muted" style={{ fontWeight: 900 }}>
                 Perdita annua stimata
               </div>
-              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
-                € {calc.perditaAnn.toFixed(2)}
-              </div>
+              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>€ {calc.perditaAnn.toFixed(2)}</div>
               <div className="ov-muted" style={{ marginTop: 6 }}>
                 al mese ≈ € {calc.perditaMese.toFixed(2)}
               </div>
@@ -439,15 +399,14 @@ export default function RisultatoClient() {
                 <div className="ov-muted" style={{ fontWeight: 900 }}>
                   Riduzione valore reale (tabella CGIL)
                 </div>
-                <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
-                  {calc.riduzioneValoreRealePct.toFixed(2)}%
-                </div>
+                <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>{calc.riduzioneValoreRealePct.toFixed(2)}%</div>
               </div>
             )}
           </div>
         </section>
       )}
 
+      {/* TAB: Arretrati */}
       {tab === "arretrati" && (
         <section className="ov-card" style={{ padding: 24 }}>
           <div className="ov-h2">Arretrati</div>
@@ -457,9 +416,7 @@ export default function RisultatoClient() {
               <div className="ov-muted" style={{ fontWeight: 900 }}>
                 Da ricevere
               </div>
-              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>
-                € {calc.arretratiDa.toFixed(2)}
-              </div>
+              <div style={{ marginTop: 8, fontSize: 28, fontWeight: 900 }}>€ {calc.arretratiDa.toFixed(2)}</div>
               <div className="ov-muted" style={{ marginTop: 6 }}>
                 Totale tabella: € {calc.arretratiTot.toFixed(2)}
               </div>
@@ -489,17 +446,29 @@ export default function RisultatoClient() {
         </section>
       )}
 
-      {/* ASSEMBLEA: SOLO ONLINE */}
+      {/* Assemblea: SOLO bottone dentro la card (niente link sopra, niente bottone in alto) */}
       <section className="ov-card" style={{ padding: 24 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
           <div>
             <div className="ov-h2">Assemblea online</div>
-
+            <div className="ov-muted" style={{ marginTop: 6 }}>
+              Partecipa da remoto e passa parola.
+            </div>
           </div>
 
-          <a href="/api/ics" className="ov-btn ov-btn-primary ov-btn-sm">
-            Scarica calendario (.ics)
-          </a>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <a href="/api/ics" className="ov-btn ov-btn-ghost ov-btn-sm">
+              Scarica calendario (.ics)
+            </a>
+          </div>
         </div>
 
         <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
@@ -512,7 +481,18 @@ export default function RisultatoClient() {
                 <div className="ov-muted">
                   {e.date} • {e.start}–{e.end} • {e.place}
                 </div>
-                <div className="ov-muted">{e.mode}</div>
+                <div className="ov-muted" style={{ marginTop: 6 }}>
+                  {e.mode}
+                </div>
+
+                {/* ✅ UNICO bottone Meet: solo qui */}
+                {MEET_URL && (
+                  <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <a href={MEET_URL} target="_blank" rel="noopener noreferrer" className="ov-btn ov-btn-primary ov-btn-sm">
+                      Entra al Meet
+                    </a>
+                  </div>
+                )}
               </div>
             ))
           )}
