@@ -7,16 +7,16 @@ import SiteFooter from "./components/SiteFooter";
 export const metadata: Metadata = {
   metadataBase: new URL("https://operazione-verita-fpcgil-veneto.vercel.app"),
 
-  title: "Operazione Verita - Funzioni Locali | FP Cgil Rovigo",
+  title: "Operazione Verità · CCNL 2025–2027 | FP CGIL Rovigo",
   description:
-    "Calcola pre/post rinnovo 2021-2026, potere d'acquisto in euro e arretrati 2022-2024. Dati tabellari: materiale CGIL fornito.",
+    "Calcola aumenti, arretrati e indennità dei CCNL Enti locali e Sanità pubblica 2025–2027.",
 
   applicationName: "Operazione Verita - FP Cgil Rovigo",
 
   openGraph: {
-    title: "Operazione Verita - Funzioni Locali | FP Cgil Rovigo",
+    title: "Operazione Verità 2025–2027 | FP CGIL Rovigo",
     description:
-      "Calcola pre/post rinnovo 2021-2026, potere d'acquisto in euro e arretrati 2022-2024.",
+      "Il nuovo CCNL Funzioni Locali: aumenti, arretrati e indennità calcolati sul tuo inquadramento.",
     type: "website",
     locale: "it_IT",
     siteName: "Operazione Verita - FP Cgil Rovigo",
@@ -24,9 +24,9 @@ export const metadata: Metadata = {
 
   twitter: {
     card: "summary_large_image",
-    title: "Operazione Verita - Funzioni Locali | FP Cgil Rovigo",
+    title: "Operazione Verità 2025–2027 | FP CGIL Rovigo",
     description:
-      "Pre/post 2021-2026, potere d'acquisto in euro, arretrati 2022-2024.",
+      "Calcola cosa cambia con il nuovo CCNL Funzioni Locali 2025–2027.",
   },
 };
 

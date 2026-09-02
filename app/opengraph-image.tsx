@@ -50,7 +50,7 @@ export default function Image() {
           <div style={{ height: 12 }} />
 
           <div style={{ fontSize: 34, fontWeight: 650, color: "#334155", lineHeight: 1.2 }}>
-            Funzioni Locali (2021-2026)
+            Funzioni Locali (2025-2027)
             <br />
             numeri chiari, metodo trasparente
           </div>
@@ -65,7 +65,7 @@ export default function Image() {
           }}
         >
           <div style={{ fontSize: 22, color: "#475569" }}>
-            Calcola pre/post, potere d&apos;acquisto e arretrati.
+            Scopri il 7,2%: tabellare, comparto e arretrati.
           </div>
 
           <div

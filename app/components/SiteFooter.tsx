@@ -10,7 +10,8 @@ export default function SiteFooter() {
         </div>
 
         <div className="ov-muted" style={{ marginTop: 6, fontSize: 12, lineHeight: 1.4 }}>
-          Operazione Verità – Funzioni Locali (CCNL 22–24). FP CGIL di Rovigo        </div>
+          Operazione Verità – Enti locali e Sanità pubblica. CCNL 2025–2027. Importi lordi indicativi. FP CGIL Rovigo.
+        </div>
       </div>
     </footer>
   );

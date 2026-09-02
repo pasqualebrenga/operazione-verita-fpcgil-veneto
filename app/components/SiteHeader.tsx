@@ -1,49 +1,44 @@
-import Link from "next/link";
+"use client";
+
 import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+const contactUrl = "https://wa.me/393405614635?text=Operazione%20Verit%C3%A0%20FPCGIL%20Rovigo%20-%20Ciao%2C%20vorrei%20informazioni.";
 
 export default function SiteHeader() {
+  const pathname = usePathname();
+
   return (
     <header className="ov-header">
-      <div className="ov-topbar">
-        <div className="ov-container ov-topbar-inner">
-          <div>Operazione Verità • Funzioni Locali</div>
-          <div>CCNL 22–24 • 2021→2026</div>
-        </div>
-      </div>
-
       <div className="ov-container ov-header-inner">
         <Link href="/" className="ov-brand" aria-label="FPCGIL Rovigo - Operazione Verità">
-          <div className="ov-logo">
+          <span className="ov-logo" aria-hidden="true">
             <Image
               src="/logo-fpcgil-rovigo.jpg"
-              alt="FP CGIL Rovigo"
-              width={170}
-              height={62}
+              alt=""
+              width={54}
+              height={67}
               className="ov-logo-img"
               priority
             />
-          </div>
-
-          <div>
-            <div className="ov-brand-title">FPCGIL Rovigo</div>
-            <div className="ov-brand-subtitle">Operazione Verità • Funzioni Locali</div>
-          </div>
+          </span>
+          <span className="ov-brand-copy">
+            <span className="ov-brand-kicker">FP CGIL Rovigo</span>
+            <strong className="ov-brand-title">Operazione <em>Verità</em></strong>
+          </span>
+          <span className="ov-contract-badge">CCNL<br /><b>25—27</b></span>
         </Link>
 
-        <nav className="ov-nav">
-  <a
-    href="https://wa.me/393405614635?text=Operazione%20Verit%C3%A0%20FPCGIL%20Rovigo%20-%20Ciao%2C%20vorrei%20informazioni."
-    className="ov-btn ov-btn-primary ov-btn-sm"
-    target="_blank"
-    rel="noreferrer"
-  >
-    Contattaci
-  </a>
-
-  <a href="/api/ics" className="ov-btn ov-btn-ghost ov-btn-sm">
-    Calendario assemblee
-  </a>
-</nav>
+        <nav className="ov-nav" aria-label="Navigazione principale">
+          <div className="ov-sector-nav" aria-label="Scegli il comparto">
+            <Link className={pathname.startsWith("/enti-locali") ? "active" : ""} href="/enti-locali">Enti locali</Link>
+            <Link className={pathname.startsWith("/sanita") ? "active" : ""} href="/sanita">Sanità</Link>
+          </div>
+          <a className="ov-contact" href={contactUrl} target="_blank" rel="noreferrer">
+            <span>Parla con noi</span><b aria-hidden="true">↗</b>
+          </a>
+        </nav>
       </div>
     </header>
   );
