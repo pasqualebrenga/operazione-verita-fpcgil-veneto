@@ -34,6 +34,7 @@ export default function SiteHeader() {
           <div className="ov-sector-nav" aria-label="Scegli il comparto">
             <Link className={pathname.startsWith("/enti-locali") ? "active" : ""} href="/enti-locali">Enti locali</Link>
             <Link className={pathname.startsWith("/sanita") ? "active" : ""} href="/sanita">Sanità</Link>
+            <Link className={pathname.startsWith("/funzioni-centrali") ? "active" : ""} href="/funzioni-centrali">Funzioni centrali</Link>
           </div>
           <a className="ov-contact" href={contactUrl} target="_blank" rel="noreferrer">
             <span>Parla con noi</span><b aria-hidden="true">↗</b>

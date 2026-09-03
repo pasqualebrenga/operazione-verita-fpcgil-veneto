@@ -9,14 +9,14 @@ export const metadata: Metadata = {
 
   title: "Operazione Verità · CCNL 2025–2027 | FP CGIL Rovigo",
   description:
-    "Calcola aumenti, arretrati e indennità dei CCNL Enti locali e Sanità pubblica 2025–2027.",
+    "Calcola aumenti, arretrati e indennità dei CCNL Enti locali, Sanità pubblica e Funzioni centrali 2025–2027.",
 
   applicationName: "Operazione Verita - FP Cgil Rovigo",
 
   openGraph: {
     title: "Operazione Verità 2025–2027 | FP CGIL Rovigo",
     description:
-      "Il nuovo CCNL Funzioni Locali: aumenti, arretrati e indennità calcolati sul tuo inquadramento.",
+      "I nuovi CCNL 2025–2027: aumenti, arretrati e indennità calcolati sul tuo inquadramento.",
     type: "website",
     locale: "it_IT",
     siteName: "Operazione Verita - FP Cgil Rovigo",
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Operazione Verità 2025–2027 | FP CGIL Rovigo",
     description:
-      "Calcola cosa cambia con il nuovo CCNL Funzioni Locali 2025–2027.",
+      "Calcola cosa cambia con i nuovi CCNL del pubblico impiego 2025–2027.",
   },
 };
 
@@ -39,7 +39,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="it">
+    <html lang="it" data-scroll-behavior="smooth">
       <body>
         <SiteHeader />
         {children}

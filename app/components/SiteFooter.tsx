@@ -10,7 +10,7 @@ export default function SiteFooter() {
         </div>
 
         <div className="ov-muted" style={{ marginTop: 6, fontSize: 12, lineHeight: 1.4 }}>
-          Operazione Verità – Enti locali e Sanità pubblica. CCNL 2025–2027. Importi lordi indicativi. FP CGIL Rovigo.
+          Operazione Verità – Enti locali, Sanità pubblica e Funzioni centrali. CCNL 2025–2027. Importi lordi indicativi. FP CGIL Rovigo.
         </div>
       </div>
     </footer>

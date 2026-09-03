@@ -6,7 +6,7 @@
 :root { --red:#e4002b; --red-dark:#b80022; --ink:#171717; --paper:#f4f1eb; --cream:#fffaf1; --line:rgba(23,23,23,.14); }
 * { box-sizing:border-box; }
 html { scroll-behavior:smooth; }
-body { margin:0; color:var(--ink); background:var(--paper); font-family:"DM Sans",sans-serif; }
+body { margin:0; overflow-x:hidden; color:var(--ink); background:var(--paper); font-family:"DM Sans",sans-serif; }
 a { color:inherit; text-decoration:none; }
 button,input,select { font:inherit; }
 .ov-container { width:min(1180px,calc(100% - 40px)); margin:auto; }
@@ -113,16 +113,17 @@ footer { border-top:1px solid var(--line); }
 .choice-intro h1 { margin:0; font:800 clamp(55px,7vw,96px)/.9 Manrope,sans-serif; letter-spacing:-.07em; }
 .choice-intro h1 em { color:var(--red); font-style:normal; }
 .choice-intro p { color:#625e58; font-size:19px; line-height:1.55; margin:0 0 6px; }
-.sector-choice { display:grid; grid-template-columns:1.08fr .92fr; gap:18px; align-items:start; }
+.sector-choice { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:start; }
 .sector-card { min-height:500px; padding:34px; color:white; display:flex; flex-direction:column; justify-content:space-between; position:relative; overflow:hidden; transition:transform .2s ease,box-shadow .2s ease; }
 .sector-card:hover { transform:translateY(-8px); box-shadow:0 24px 50px rgba(70,0,14,.2); }
 .local-sector { background:var(--red); border-radius:3px 54px 3px 3px; }
 .health-sector { background:#94132c; border-radius:54px 3px 3px 3px; margin-top:52px; }
+.central-sector { background:#6f0d24; border-radius:3px 3px 54px 3px; margin-top:18px; }
 .sector-card:after { position:absolute; right:-25px; top:60px; font:800 300px/1 Manrope; opacity:.1; }
-.local-sector:after { content:"⌂"; }.health-sector:after { content:"+"; }
+.local-sector:after { content:"⌂"; }.health-sector:after { content:"+"; }.central-sector:after { content:"◆"; }
 .sector-top { display:flex; justify-content:space-between; gap:20px; font-size:11px; text-transform:uppercase; letter-spacing:.1em; opacity:.8; }
 .sector-icon { font-size:26px; }
-.sector-card h2 { margin:12px 0; font:800 clamp(54px,6vw,82px)/.88 Manrope,sans-serif; letter-spacing:-.07em; }
+.sector-card h2 { margin:12px 0; font:800 clamp(42px,4.6vw,62px)/.9 Manrope,sans-serif; letter-spacing:-.07em; }
 .sector-card p { max-width:330px; opacity:.82; }
 .sector-card>strong { display:flex; justify-content:space-between; border-top:1px solid rgba(255,255,255,.4); padding-top:20px; position:relative; z-index:1; }
 .sector-card>strong span { font-size:22px; }
@@ -150,13 +151,26 @@ footer { border-top:1px solid var(--line); }
 .overtime-values article { padding:17px; border-left:1px solid #793242; border-bottom:1px solid #793242; }
 .overtime-values span,.overtime-values b { display:block; }.overtime-values span { color:#d6aeb7; font-size:12px; }.overtime-values b { margin-top:7px; font:800 22px Manrope; }
 
+/* Funzioni centrali */
+.central-eyebrow { color:#82112a; }
+.central-hero h1 em { color:#82112a; }
+.central-calculator { box-shadow:18px 18px 0 #6f0d24; }
+.central-calculator .primary-action { background:#971333; }
+.central-strip,.central-big-result { background:#6f0d24; }
+.central-rights .section-number { color:#d9b8c0; }
+.timeline article.central-active { border-color:#6f0d24; background:#fff1f4; }
+.central-result-grid .central-arrears { background:#390814; }
+.central-arrow,.central-detail,.central-differential-card small { color:#82112a!important; }
+.central-differential-card { background:#fff1f4!important; }
+.central-variable-resources { grid-template-columns:.7fr 2fr; }
+
 @media(max-width:800px){
   .ov-container,.hero,.rights-section,.result-page{width:min(100% - 28px,1180px)} .ov-header-inner{min-height:76px;gap:12px}.ov-logo{width:38px;height:48px}.ov-brand{gap:10px}.ov-brand-kicker{font-size:8px;letter-spacing:.12em}.ov-brand-title{font-size:18px}.ov-contract-badge,.ov-sector-nav{display:none}.ov-nav{gap:0}.ov-contact{min-width:132px;padding:11px 13px 11px 15px}.ov-contact b{font-size:20px}
   .hero{grid-template-columns:1fr;gap:45px;padding:55px 0 70px}.hero h1{font-size:50px}.hero-lead{font-size:17px}.hero-highlights{gap:12px}.hero-highlights strong{font-size:17px}.calculator{padding:28px;box-shadow:10px 10px 0 var(--red)}
   .contract-strip{grid-template-columns:1fr;padding:0 14px}.contract-strip>div,.contract-strip>div:first-child{border-left:0;border-right:0;border-bottom:1px solid rgba(255,255,255,.25);padding:26px 10px}
   .rights-section{grid-template-columns:1fr;padding:75px 0;gap:35px}.section-number{font-size:55px}.rights-grid{grid-template-columns:1fr}.rights-grid article:nth-child(even){padding-left:0;border-left:0}.rights-section h2{font-size:40px}
   .result-page{padding-top:38px}.result-head{display:block}.result-actions{margin-top:20px}.big-result{padding:30px 24px}.big-result-value{font-size:64px}.timeline-card{padding:24px 14px;overflow-x:auto}.timeline.timeline-four{min-width:620px}.timeline article{padding:16px 8px}.timeline article strong{font-size:22px}.result-grid{grid-template-columns:1fr}.result-grid article{min-height:0}.variable-resources{grid-template-columns:1fr;gap:18px}.result-disclaimer{grid-template-columns:1fr;gap:10px}
-  .choice-page{width:calc(100% - 28px);padding-top:45px}.choice-page:before{font-size:90px;top:18px}.choice-intro{grid-template-columns:1fr;gap:24px}.choice-intro h1{font-size:56px}.choice-intro p{font-size:16px}.sector-choice{grid-template-columns:1fr;gap:14px}.sector-card{min-height:430px;padding:25px}.sector-card h2{font-size:60px}.health-sector{margin-top:0}.health-calculator{box-shadow:10px 10px 0 #94132c}.health-result .result-head h1{font-size:42px}.overtime-section{grid-template-columns:1fr;padding:25px}.overtime-values{grid-template-columns:1fr}
+  .choice-page{width:calc(100% - 28px);padding-top:45px}.choice-page:before{font-size:90px;top:18px;right:0}.choice-intro{grid-template-columns:1fr;gap:24px}.choice-intro h1{font-size:56px}.choice-intro p{font-size:16px}.sector-choice{grid-template-columns:1fr;gap:14px}.sector-card{min-height:430px;padding:25px}.sector-card h2{font-size:56px}.health-sector,.central-sector{margin-top:0}.health-calculator{box-shadow:10px 10px 0 #94132c}.central-calculator{box-shadow:10px 10px 0 #6f0d24}.health-result .result-head h1,.central-result .result-head h1{font-size:42px}.overtime-section{grid-template-columns:1fr;padding:25px}.overtime-values{grid-template-columns:1fr}.central-variable-resources{grid-template-columns:1fr}
 }
 
 @media(max-width:480px){

@@ -27,6 +27,15 @@ export default function ChooseContractPage() {
           </div>
           <strong>Entra nel calcolatore <span>→</span></strong>
         </Link>
+        <Link href="/funzioni-centrali" className="sector-card central-sector">
+          <div className="sector-top"><span>03</span><b>Ministeri · Agenzie · Enti pubblici</b></div>
+          <div>
+            <span className="sector-icon" aria-hidden="true">◆</span>
+            <h2>Funzioni<br />centrali</h2>
+            <p>Calcola aumenti tabellari, differenziali e arretrati.</p>
+          </div>
+          <strong>Entra nel calcolatore <span>→</span></strong>
+        </Link>
       </section>
       <div className="choice-note">CCNL 2025–2027 · importi lordi indicativi · FP CGIL Rovigo</div>
     </main>
